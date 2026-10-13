@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 
-app = Flask(_name_)
+app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///onbuddy.db'
 db = SQLAlchemy(app)
 
@@ -15,7 +15,7 @@ class Employee(db.Model):
 def index():
     return render_template('index.html')
 
-if _name_ == '_main_':
+if _name_ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
