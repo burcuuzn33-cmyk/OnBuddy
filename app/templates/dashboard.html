@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OnBuddy Yönetim Paneli</title>
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--ink:#1c2230;--mut:#6b7385;--brand:#4f46e5;--line:#e3e6ee}
+  @media (prefers-color-scheme:dark){:root{--bg:#12141b;--card:#1b1e28;--ink:#eceef5;--mut:#9aa1b3;--line:#2b3040}}
+  *{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1000px;margin:0 auto;padding:16px}
+  .bar{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  h1{font-size:20px}.mut{color:var(--mut)}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:auto;margin-top:12px}
+  table{border-collapse:collapse;width:100%;min-width:640px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:13px}
+  button{padding:8px 14px;border:0;border-radius:8px;background:var(--brand);color:#fff;font:inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar"><h1>Başvuru / Aday Listesi</h1><div><span id="count" class="mut"></span> <button id="r">Yenile</button></div></div>
+  <div class="box"><table>
+    <thead><tr><th>Ad</th><th>E-posta</th><th>Telefon</th><th>Pozisyon</th><th>Mesaj</th><th>Tarih</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="mut">Yükleniyor…</td></tr></tbody>
+  </table></div>
+</div>
+<script>
+const rows=document.getElementById('rows'),count=document.getElementById('count');
+function cell(v){const td=document.createElement('td');td.textContent=v||'—';return td}
+async function load(){
+  let token=sessionStorage.getItem('adm')||'';
+  let r=await fetch('/api/candidates',{headers:{'X-Admin-Token':token}});
+  if(r.status===401){token=prompt('Yönetici anahtarı:')||'';sessionStorage.setItem('adm',token);
+    r=await fetch('/api/candidates',{headers:{'X-Admin-Token':token}})}
+  const j=await r.json();rows.replaceChildren();
+  if(!j.success){rows.innerHTML='<tr><td colspan="6" class="mut">'+(j.error||'Hata')+'</td></tr>';return}
+  count.textContent=j.total+' kayıt';
+  if(!j.total){rows.innerHTML='<tr><td colspan="6" class="mut">Henüz kayıt yok.</td></tr>';return}
+  j.candidates.forEach(c=>{const tr=document.createElement('tr');
+    [c.name,c.email,c.phone,c.position,c.message,c.created_at].forEach(v=>tr.appendChild(cell(v)));rows.appendChild(tr)})
+}
+document.getElementById('r').onclick=load;load();
+</script>
+</body></html>

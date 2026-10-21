@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OnBuddy Asistan</title>
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--ink:#1c2230;--mut:#6b7385;--brand:#4f46e5;--line:#e3e6ee}
+  @media (prefers-color-scheme:dark){:root{--bg:#12141b;--card:#1b1e28;--ink:#eceef5;--mut:#9aa1b3;--line:#2b3040}}
+  *{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:640px;margin:0 auto;padding:16px;display:flex;flex-direction:column;height:100dvh}
+  h1{font-size:20px;margin:4px 0 12px}
+  #log{flex:1;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0}
+  .m{max-width:85%;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--line);white-space:pre-wrap}
+  .u{align-self:flex-end;background:var(--brand);color:#fff;border-color:var(--brand)}
+  form{display:flex;gap:8px;margin-top:8px}
+  input{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
+  button{padding:12px 18px;border:0;border-radius:10px;background:var(--brand);color:#fff;font:inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>OnBuddy İK Asistanı</h1>
+  <div id="log"><div class="m">Merhaba! Size nasıl yardımcı olabilirim?</div></div>
+  <form id="f"><input id="t" placeholder="Mesajınızı yazın…" autocomplete="off" required><button>Gönder</button></form>
+</div>
+<script>
+const log=document.getElementById('log'),f=document.getElementById('f'),t=document.getElementById('t');
+const history=[];
+function add(text,cls){const d=document.createElement('div');d.className='m '+(cls||'');d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
+f.addEventListener('submit',async e=>{
+  e.preventDefault();const msg=t.value.trim();if(!msg)return;t.value='';add(msg,'u');
+  const wait=add('…');
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history})});
+    const j=await r.json();
+    wait.textContent=j.success?j.reply:(j.error||'Bir hata oluştu.');
+    if(j.success){history.push({role:'user',content:msg},{role:'assistant',content:j.reply})}
+  }catch(err){wait.textContent='Sunucuya ulaşılamadı.'}
+});
+</script>
+</body></html>
