@@ -23,7 +23,7 @@ class Config:
     # Yapay zekâ sağlayıcısı: groq (önerilen, ücretsiz) | openai | gemini
     AI_PROVIDER = os.environ.get("AI_PROVIDER", "groq")
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-    GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+    GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 

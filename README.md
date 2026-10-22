@@ -4,7 +4,7 @@ Wix Studio sitemizdeki ziyaretçilerle yapay zekâ üzerinden Türkçe sohbet ed
 iletişim bilgisi bırakan adayları kaydeden Flask backend'i. İki arayüz vardır:
 karşılama sayfası (sohbet + form) ve adayların listelendiği yönetim paneli.
 
-**Teknolojiler:** Python · Flask · SQLite · Groq (Llama 3.1) · Wix Velo · Render
+**Teknolojiler:** Python · Flask · SQLite · Groq (openai/gpt-oss-20b) · Wix Velo · Render
 
 ## Mimari
 
