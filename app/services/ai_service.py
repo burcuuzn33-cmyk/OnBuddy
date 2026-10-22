@@ -1,96 +1,117 @@
+"""Yapay zekâ servis katmanı: tüm AI API çağrıları yalnızca bu dosyada bulunur.
+
+Bu dosya Flask, HTTP rotaları veya veritabanı hakkında hiçbir şey bilmez;
+sadece mesajı alır, seçili yapay zekâya sorar ve yanıt metnini döndürür.
+"""
 import logging
 import requests
-from flask import current_app
+from config import Config
 
 log = logging.getLogger(__name__)
 
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+ZAMAN_ASIMI = 15        # saniye; yapay zekâ bu sürede yanıt vermezse vazgeçilir
+MAKS_GECMIS = 10        # token limitini aşmamak için gönderilen son mesaj sayısı
+
 
 class AIServiceError(Exception):
-    pass
+    """Yapay zekâ servisine ulaşılamadığında fırlatılır; rotalar bunu 503 JSON'a çevirir."""
 
 
 class AIService:
-    def generate_reply(self, message: str, history: list = None) -> str:
-        history = history or []
-        provider = current_app.config.get("AI_PROVIDER", "groq").lower()
-        if provider == "openai":
-            return self._openai_compatible(
-                "https://api.openai.com/v1/chat/completions",
-                current_app.config.get("OPENAI_API_KEY", ""),
-                "gpt-4o-mini", message, history, "OpenAI",
-            )
-        if provider == "gemini":
-            return self._gemini(message, history)
-        return self._openai_compatible(
-            "https://api.groq.com/openai/v1/chat/completions",
-            current_app.config.get("GROQ_API_KEY", ""),
-            current_app.config.get("GROQ_MODEL", "llama-3.1-8b-instant"), message, history, "Groq",
-        )
+    def yanit_uret(self, mesaj, gecmis=None):
+        """AI_PROVIDER ayarına göre doğru sağlayıcıyı seçer ve yanıt metnini döndürür."""
+        gecmis = self._gecmisi_temizle(gecmis)
+        saglayici = (Config.AI_PROVIDER or "groq").lower()
 
-    def _system_prompt(self) -> str:
-        return current_app.config.get("BUSINESS_CONTEXT", "Sen yardımcı bir İK asistanısın.")
+        if saglayici == "openai":
+            return self._openai_uyumlu_cagir(OPENAI_URL, Config.OPENAI_API_KEY, "gpt-4o-mini", mesaj, gecmis, "OpenAI")
+        if saglayici == "gemini":
+            return self._gemini_cagir(mesaj, gecmis)
+        # Varsayılan: Groq (ücretsiz ve hızlı)
+        return self._openai_uyumlu_cagir(GROQ_URL, Config.GROQ_API_KEY, Config.GROQ_MODEL, mesaj, gecmis, "Groq")
 
-    def _openai_compatible(self, url, api_key, model, message, history, name):
-        if not api_key:
-            log.warning("%s API anahtarı yok, demo modu.", name)
-            return self._demo()
-        messages = [{"role": "system", "content": self._system_prompt()}]
-        messages += [{"role": m["role"], "content": m["content"]} for m in history]
-        messages.append({"role": "user", "content": message})
+    def _sistem_talimati(self):
+        """Yapay zekâya kim olduğunu söyleyen BUSINESS_CONTEXT metni."""
+        return Config.BUSINESS_CONTEXT
+
+    @staticmethod
+    def _gecmisi_temizle(gecmis):
+        """Frontend'den gelen geçmişte sadece geçerli {role, content} kayıtlarını tutar."""
+        if not isinstance(gecmis, list):
+            return []
+        temiz = [
+            {"role": m["role"], "content": m["content"]}
+            for m in gecmis
+            if isinstance(m, dict)
+            and m.get("role") in ("user", "assistant")
+            and isinstance(m.get("content"), str)
+        ]
+        return temiz[-MAKS_GECMIS:]
+
+    def _openai_uyumlu_cagir(self, url, api_anahtari, model, mesaj, gecmis, ad):
+        """Groq ve OpenAI aynı formatı kullandığı için ikisi de bu metottan geçer."""
+        if not api_anahtari:
+            log.warning("%s API anahtarı yok, demo modunda yanıt veriliyor.", ad)
+            return self._demo_yaniti()
+
+        # Sıra önemli: önce sistem talimatı, sonra geçmiş, en sonda yeni kullanıcı mesajı
+        mesajlar = [{"role": "system", "content": self._sistem_talimati()}]
+        mesajlar += gecmis
+        mesajlar.append({"role": "user", "content": mesaj})
+
         try:
-            r = requests.post(
+            yanit = requests.post(
                 url,
-                json={"model": model, "messages": messages, "max_tokens": 500, "temperature": 0.7},
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                timeout=15,
+                json={"model": model, "messages": mesajlar, "max_tokens": 500, "temperature": 0.7},
+                headers={"Authorization": f"Bearer {api_anahtari}"},
+                timeout=ZAMAN_ASIMI,
             )
-            if r.status_code != 200:
-                detail = self._error_detail(r)
-                log.error("%s HTTP %s: %s", name, r.status_code, detail)
-                raise AIServiceError(f"{name} hatası (HTTP {r.status_code}): {detail}")
-            return r.json()["choices"][0]["message"]["content"].strip()
+            if yanit.status_code != 200:
+                log.error("%s HTTP %s: %s", ad, yanit.status_code, yanit.text[:300])
+                raise AIServiceError(f"{ad} servisi şu an yanıt veremiyor (HTTP {yanit.status_code}).")
+            return yanit.json()["choices"][0]["message"]["content"].strip()
         except AIServiceError:
             raise
         except Exception as e:
-            log.error("%s bağlantı hatası: %s", name, e)
-            raise AIServiceError(f"{name} servisine bağlanılamadı: {type(e).__name__}")
+            log.error("%s bağlantı hatası: %s", ad, e)
+            raise AIServiceError(f"{ad} servisine bağlanılamadı.") from e
 
-    def _gemini(self, message, history):
-        api_key = current_app.config.get("GEMINI_API_KEY", "")
-        if not api_key:
-            return self._demo()
-        # Gemini rolleri: "user" / "model"
-        contents = [
+    def _gemini_cagir(self, mesaj, gecmis):
+        if not Config.GEMINI_API_KEY:
+            return self._demo_yaniti()
+
+        # Gemini'de asistan rolünün adı "model"dir
+        icerik = [
             {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-            for m in history
+            for m in gecmis
         ]
-        contents.append({"role": "user", "parts": [{"text": message}]})
+        icerik.append({"role": "user", "parts": [{"text": mesaj}]})
+
         try:
-            r = requests.post(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+            yanit = requests.post(
+                GEMINI_URL,
                 json={
-                    "system_instruction": {"parts": [{"text": self._system_prompt()}]},
-                    "contents": contents,
+                    "system_instruction": {"parts": [{"text": self._sistem_talimati()}]},
+                    "contents": icerik,
                     "generationConfig": {"temperature": 0.7, "maxOutputTokens": 500},
                 },
-                headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-                timeout=15,
+                headers={"x-goog-api-key": Config.GEMINI_API_KEY},
+                timeout=ZAMAN_ASIMI,
             )
-            r.raise_for_status()
-            return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            yanit.raise_for_status()
+            return yanit.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         except Exception as e:
             log.error("Gemini hatası: %s", e)
-            raise AIServiceError("Gemini servisine ulaşılamadı.")
+            raise AIServiceError("Gemini servisine ulaşılamadı.") from e
 
     @staticmethod
-    def _error_detail(r) -> str:
-        try:
-            return r.json().get("error", {}).get("message", r.text[:200])
-        except Exception:
-            return r.text[:200]
-
-    def _demo(self) -> str:
-        return "API anahtarı tanımlı değil, demo moddayım. Lütfen .env dosyanızı kontrol edin."
+    def _demo_yaniti():
+        """API anahtarı yoksa çökmek yerine bu bilgilendirme mesajı döner."""
+        return "Sistem demo modunda çalışıyor: API anahtarı tanımlı değil. Lütfen .env dosyanızı kontrol edin."
 
 
+# Tüm uygulamanın kullandığı tek örnek
 ai_service = AIService()

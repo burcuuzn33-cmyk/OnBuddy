@@ -2,40 +2,101 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OnBuddy Asistan</title>
+<title>OnBuddy İK Asistanı</title>
 <style>
-  :root{--bg:#f6f7fb;--card:#fff;--ink:#1c2230;--mut:#6b7385;--brand:#4f46e5;--line:#e3e6ee}
-  @media (prefers-color-scheme:dark){:root{--bg:#12141b;--card:#1b1e28;--ink:#eceef5;--mut:#9aa1b3;--line:#2b3040}}
-  *{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;background:var(--bg);color:var(--ink)}
-  .wrap{max-width:640px;margin:0 auto;padding:16px;display:flex;flex-direction:column;height:100dvh}
-  h1{font-size:20px;margin:4px 0 12px}
-  #log{flex:1;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0}
-  .m{max-width:85%;padding:10px 14px;border-radius:14px;background:var(--card);border:1px solid var(--line);white-space:pre-wrap}
+  :root{--bg:#f6f7fb;--card:rgba(255,255,255,.75);--ink:#1c2230;--mut:#6b7385;--brand:#4f46e5;--line:#e3e6ee;--ok:#15803d;--err:#b91c1c}
+  @media (prefers-color-scheme:dark){:root{--bg:#12141b;--card:rgba(27,30,40,.75);--ink:#eceef5;--mut:#9aa1b3;--line:#2b3040;--ok:#4ade80;--err:#f87171}}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1040px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:1fr 1fr;align-items:start}
+  header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center}
+  header b{font-size:20px}header a{color:var(--mut);font-size:14px}
+  .card{background:var(--card);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:16px;padding:16px}
+  h1{font-size:28px;margin:0 0 8px}p{color:var(--mut);margin:0 0 12px}
+  #log{height:360px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .m{max-width:85%;padding:10px 14px;border-radius:14px;background:var(--bg);border:1px solid var(--line);white-space:pre-wrap}
   .u{align-self:flex-end;background:var(--brand);color:#fff;border-color:var(--brand)}
-  form{display:flex;gap:8px;margin-top:8px}
-  input{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
-  button{padding:12px 18px;border:0;border-radius:10px;background:var(--brand);color:#fff;font:inherit;cursor:pointer}
+  .row{display:flex;gap:8px;margin-top:8px}
+  input,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+  label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+  button{padding:11px 18px;border:0;border-radius:10px;background:var(--brand);color:#fff;font:inherit;cursor:pointer}
+  button:disabled{opacity:.6}
+  #durum{min-height:1.4em;margin-top:8px;font-size:14px}
+  @media (max-width:760px){.wrap{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>OnBuddy İK Asistanı</h1>
-  <div id="log"><div class="m">Merhaba! Size nasıl yardımcı olabilirim?</div></div>
-  <form id="f"><input id="t" placeholder="Mesajınızı yazın…" autocomplete="off" required><button>Gönder</button></form>
+  <header><b>OnBuddy</b><a href="/dashboard">Yönetim Paneli →</a></header>
+
+  <section>
+    <h1>Kariyerinizin ilk adımında yanınızdayız.</h1>
+    <p>Açık pozisyonlar ve başvuru süreci hakkında İK asistanımıza dilediğinizi sorun, ardından bilgilerinizi bırakın; ekibimiz size dönüş yapsın.</p>
+    <form id="leadForm" class="card">
+      <b>İletişim Bilgilerinizi Bırakın</b>
+      <label for="isim">Ad Soyad *</label><input id="isim" required>
+      <label for="telefon">Telefon *</label><input id="telefon" type="tel" required>
+      <label for="eposta">E-posta</label><input id="eposta" type="email">
+      <label for="pozisyon">İlgilendiğiniz pozisyon</label><input id="pozisyon">
+      <label for="not">Not</label><textarea id="not" rows="2"></textarea>
+      <div class="row"><button id="kaydet">Kaydet</button></div>
+      <div id="durum"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <b>OnBuddy İK Asistanı</b>
+    <div id="log"><div class="m">Merhaba! Size nasıl yardımcı olabilirim?</div></div>
+    <form id="sohbetForm" class="row">
+      <input id="mesaj" placeholder="Sorunuzu yazın…" autocomplete="off" required><button>Sor</button>
+    </form>
+  </section>
 </div>
 <script>
-const log=document.getElementById('log'),f=document.getElementById('f'),t=document.getElementById('t');
-const history=[];
-function add(text,cls){const d=document.createElement('div');d.className='m '+(cls||'');d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
-f.addEventListener('submit',async e=>{
-  e.preventDefault();const msg=t.value.trim();if(!msg)return;t.value='';add(msg,'u');
-  const wait=add('…');
-  try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history})});
-    const j=await r.json();
-    wait.textContent=j.success?j.reply:(j.error||'Bir hata oluştu.');
-    if(j.success){history.push({role:'user',content:msg},{role:'assistant',content:j.reply})}
-  }catch(err){wait.textContent='Sunucuya ulaşılamadı.'}
+const $ = id => document.getElementById(id);
+const gecmis = [];  // çok turlu sohbet için {role, content} listesi
+
+function balon(metin, sinif) {
+  const d = document.createElement('div');
+  d.className = 'm ' + (sinif || '');
+  d.textContent = metin;
+  $('log').appendChild(d);
+  $('log').scrollTop = $('log').scrollHeight;
+  return d;
+}
+
+// Sohbet: POST /api/sohbet {mesaj, gecmis} → {basari, cevap}
+$('sohbetForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const mesaj = $('mesaj').value.trim();
+  if (!mesaj) return;
+  $('mesaj').value = '';
+  balon(mesaj, 'u');
+  const bekle = balon('…');
+  try {
+    const r = await fetch('/api/sohbet', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                          body: JSON.stringify({mesaj, gecmis})});
+    const j = await r.json();
+    bekle.textContent = j.basari ? j.cevap : (j.hata || 'Bir hata oluştu.');
+    if (j.basari) gecmis.push({role: 'user', content: mesaj}, {role: 'assistant', content: j.cevap});
+  } catch { bekle.textContent = 'Sunucuya ulaşılamadı.'; }
+});
+
+// Form: POST /api/leads {isim, telefon, eposta, pozisyon, mesaj} → {basari, mesaj}
+$('leadForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const durum = $('durum');
+  $('kaydet').disabled = true;
+  try {
+    const r = await fetch('/api/leads', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({isim: $('isim').value, telefon: $('telefon').value, eposta: $('eposta').value,
+                            pozisyon: $('pozisyon').value, mesaj: $('not').value})});
+    const j = await r.json();
+    durum.style.color = j.basari ? 'var(--ok)' : 'var(--err)';
+    durum.textContent = j.basari ? j.mesaj : j.hata;
+    if (j.basari) $('leadForm').reset();
+  } catch { durum.style.color = 'var(--err)'; durum.textContent = 'Sunucuya ulaşılamadı.'; }
+  $('kaydet').disabled = false;
 });
 </script>
 </body></html>

@@ -7,39 +7,80 @@
   :root{--bg:#f6f7fb;--card:#fff;--ink:#1c2230;--mut:#6b7385;--brand:#4f46e5;--line:#e3e6ee}
   @media (prefers-color-scheme:dark){:root{--bg:#12141b;--card:#1b1e28;--ink:#eceef5;--mut:#9aa1b3;--line:#2b3040}}
   *{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--ink)}
-  .wrap{max-width:1000px;margin:0 auto;padding:16px}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
   .bar{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
   h1{font-size:20px}.mut{color:var(--mut)}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .kpi b{display:block;font-size:26px}
   .box{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:auto;margin-top:12px}
-  table{border-collapse:collapse;width:100%;min-width:640px}
+  table{border-collapse:collapse;width:100%;min-width:720px}
   th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--mut);font-weight:600;font-size:13px}
+  th{color:var(--mut);font-weight:600;font-size:13px}td:first-child{font-weight:600}
+  input{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
   button{padding:8px 14px;border:0;border-radius:8px;background:var(--brand);color:#fff;font:inherit;cursor:pointer}
+  @media (max-width:600px){.kpis{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="bar"><h1>Başvuru / Aday Listesi</h1><div><span id="count" class="mut"></span> <button id="r">Yenile</button></div></div>
+  <div class="bar"><h1>Aday Yönetim Paneli</h1>
+    <div><input id="ara" placeholder="İsim / telefon ara"> <button id="yenile">Yenile</button></div></div>
+  <!-- F-Pattern: üstte özet kartlar, altta tablo; en önemli kolon (isim) solda -->
+  <div class="kpis">
+    <div class="kpi"><span class="mut">Toplam aday</span><b id="kToplam">0</b></div>
+    <div class="kpi"><span class="mut">Bu ay</span><b id="kAy">0</b></div>
+    <div class="kpi"><span class="mut">Bugün</span><b id="kGun">0</b></div>
+  </div>
   <div class="box"><table>
-    <thead><tr><th>Ad</th><th>E-posta</th><th>Telefon</th><th>Pozisyon</th><th>Mesaj</th><th>Tarih</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="6" class="mut">Yükleniyor…</td></tr></tbody>
+    <thead><tr><th>İsim</th><th>Telefon</th><th>E-posta</th><th>Pozisyon</th><th>Mesaj</th><th>Tarih</th></tr></thead>
+    <tbody id="satirlar"><tr><td colspan="6" class="mut">Yükleniyor…</td></tr></tbody>
   </table></div>
 </div>
 <script>
-const rows=document.getElementById('rows'),count=document.getElementById('count');
-function cell(v){const td=document.createElement('td');td.textContent=v||'—';return td}
-async function load(){
-  let token=sessionStorage.getItem('adm')||'';
-  let r=await fetch('/api/candidates',{headers:{'X-Admin-Token':token}});
-  if(r.status===401){token=prompt('Yönetici anahtarı:')||'';sessionStorage.setItem('adm',token);
-    r=await fetch('/api/candidates',{headers:{'X-Admin-Token':token}})}
-  const j=await r.json();rows.replaceChildren();
-  if(!j.success){rows.innerHTML='<tr><td colspan="6" class="mut">'+(j.error||'Hata')+'</td></tr>';return}
-  count.textContent=j.total+' kayıt';
-  if(!j.total){rows.innerHTML='<tr><td colspan="6" class="mut">Henüz kayıt yok.</td></tr>';return}
-  j.candidates.forEach(c=>{const tr=document.createElement('tr');
-    [c.name,c.email,c.phone,c.position,c.message,c.created_at].forEach(v=>tr.appendChild(cell(v)));rows.appendChild(tr)})
+const $ = id => document.getElementById(id);
+let leadler = [];
+
+function bilgi(metin) { $('satirlar').innerHTML = '<tr><td colspan="6" class="mut"></td></tr>'; $('satirlar').querySelector('td').textContent = metin; }
+
+function ciz(liste) {
+  if (!liste.length) return bilgi('Henüz kayıtlı aday yok.');
+  $('satirlar').replaceChildren(...liste.map(l => {
+    const tr = document.createElement('tr');
+    [l.isim, l.telefon, l.eposta, l.pozisyon, l.mesaj, l.tarih].forEach(v => {
+      const td = document.createElement('td'); td.textContent = v || '—'; tr.appendChild(td);
+    });
+    return tr;
+  }));
 }
-document.getElementById('r').onclick=load;load();
+
+// SQLite tarihi UTC "YYYY-MM-DD HH:MM:SS" biçimindedir
+const tarih = s => new Date(s.replace(' ', 'T') + 'Z');
+
+// GET /api/leads → {basari, toplam, leadler}
+async function yukle() {
+  let token = sessionStorage.getItem('adm') || '';
+  let r = await fetch('/api/leads', {headers: {'X-Admin-Token': token}});
+  if (r.status === 401) {
+    token = prompt('Yönetici anahtarı:') || '';
+    sessionStorage.setItem('adm', token);
+    r = await fetch('/api/leads', {headers: {'X-Admin-Token': token}});
+  }
+  const j = await r.json();
+  if (!j.basari) return bilgi(j.hata || 'Hata');
+  leadler = j.leadler;
+  const simdi = new Date();
+  $('kToplam').textContent = j.toplam;
+  $('kAy').textContent = leadler.filter(l => { const t = tarih(l.tarih); return t.getMonth() === simdi.getMonth() && t.getFullYear() === simdi.getFullYear(); }).length;
+  $('kGun').textContent = leadler.filter(l => tarih(l.tarih).toDateString() === simdi.toDateString()).length;
+  ciz(leadler);
+}
+
+$('ara').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().trim();
+  ciz(leadler.filter(l => (l.isim + ' ' + l.telefon).toLowerCase().includes(q)));
+});
+$('yenile').onclick = yukle;
+yukle();
 </script>
 </body></html>

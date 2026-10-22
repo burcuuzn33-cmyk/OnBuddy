@@ -1,65 +1,94 @@
+"""HTTP rotaları: isteği karşılar, doğrular ve doğru katmana yönlendirir.
+
+Burada SQL veya yapay zekâ kodu YOKTUR; sadece database.py ve ai_service.py fonksiyonları çağrılır.
+"""
 import hmac
 from functools import wraps
 from flask import Blueprint, request, jsonify, render_template, current_app
 from app.services.ai_service import ai_service, AIServiceError
-from app.database import add_candidate, list_candidates
+from app.database import lead_ekle, tum_leadler, VeritabaniHatasi
 
-api = Blueprint("api", __name__)
-pages = Blueprint("pages", __name__)
+api = Blueprint("api", __name__)            # /api önekiyle kaydedilir (__init__.py)
+sayfalar = Blueprint("sayfalar", __name__)
 
 
-def admin_required(fn):
-    """ADMIN_TOKEN tanımlıysa X-Admin-Token başlığını zorunlu kılar."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
+def _json_govde():
+    """İstek gövdesini sözlük olarak döndürür; JSON yoksa veya bozuksa boş sözlük."""
+    veri = request.get_json(silent=True)
+    return veri if isinstance(veri, dict) else {}
+
+
+def _metin(veri, alan):
+    """Alanı güvenle metne çevirip baştaki/sondaki boşlukları siler."""
+    deger = veri.get(alan)
+    return deger.strip() if isinstance(deger, str) else ""
+
+
+def yonetici_gerekli(fonksiyon):
+    """ADMIN_TOKEN tanımlıysa "X-Admin-Token" başlığını zorunlu kılar; boşsa herkese açık bırakır."""
+    @wraps(fonksiyon)
+    def sarmalayici(*args, **kwargs):
         token = current_app.config.get("ADMIN_TOKEN")
         if token:
-            sent = request.headers.get("X-Admin-Token", "")
-            if not hmac.compare_digest(sent, token):
-                return jsonify({"success": False, "error": "Yetkisiz erişim."}), 401
-        return fn(*args, **kwargs)
-    return wrapper
+            gelen = request.headers.get("X-Admin-Token", "")
+            # compare_digest: karşılaştırma süresinden anahtar tahmin edilmesini önler
+            if not hmac.compare_digest(gelen, token):
+                return jsonify({"basari": False, "hata": "Yetkisiz erişim."}), 401
+        return fonksiyon(*args, **kwargs)
+    return sarmalayici
 
 
 # ── Sayfalar ──────────────────────────────────────────
-@pages.route("/")
-def chat_page():
+@sayfalar.route("/")
+def karsilama_sayfasi():
     return render_template("index.html")
 
 
-@pages.route("/panel")
-def admin_panel():
+@sayfalar.route("/dashboard")
+@sayfalar.route("/panel")
+def yonetim_paneli():
     return render_template("dashboard.html")
 
 
 # ── API ───────────────────────────────────────────────
-@api.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json(silent=True) or {}
-    message = (data.get("message") or "").strip()
-    history = data.get("history", [])
-    if not message:
-        return jsonify({"success": False, "error": "Mesaj boş olamaz."}), 400
+@api.route("/sohbet", methods=["POST"])
+def sohbet():
+    """Gönderilen: {mesaj, gecmis}  →  Dönen: {basari, cevap}"""
+    veri = _json_govde()
+    mesaj = _metin(veri, "mesaj")
+    if not mesaj:
+        return jsonify({"basari": False, "hata": "Mesaj boş olamaz."}), 400
+
     try:
-        reply = ai_service.generate_reply(message, history)
-        return jsonify({"success": True, "reply": reply})
+        cevap = ai_service.yanit_uret(mesaj, veri.get("gecmis", []))
+        return jsonify({"basari": True, "cevap": cevap})
     except AIServiceError as e:
-        return jsonify({"success": False, "error": str(e)}), 503
+        # Yapay zekâ servisi çökerse uygulama çökmez; kibar bir hata döner
+        return jsonify({"basari": False, "hata": str(e)}), 503
 
 
-@api.route("/candidates", methods=["POST"])
-def create_candidate():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip()
-    if not name or not email:
-        return jsonify({"success": False, "error": "Ad ve e-posta zorunludur."}), 400
-    add_candidate(name, email, data.get("phone", ""), data.get("position", ""), data.get("message", ""))
-    return jsonify({"success": True, "message": "Bilgileriniz kaydedildi."}), 201
+@api.route("/leads", methods=["POST"])
+def lead_kaydet():
+    """Gönderilen: {isim, telefon, mesaj?, eposta?, pozisyon?}  →  Dönen: {basari, mesaj}"""
+    veri = _json_govde()
+    isim = _metin(veri, "isim")
+    telefon = _metin(veri, "telefon")
+    if not isim or not telefon:
+        return jsonify({"basari": False, "hata": "İsim ve telefon zorunludur."}), 400
+
+    try:
+        lead_ekle(isim, telefon, _metin(veri, "mesaj"), _metin(veri, "eposta"), _metin(veri, "pozisyon"))
+    except VeritabaniHatasi as e:
+        return jsonify({"basari": False, "hata": str(e)}), 500
+    return jsonify({"basari": True, "mesaj": "Bilgileriniz kaydedildi, en kısa sürede size dönüş yapacağız."}), 201
 
 
-@api.route("/candidates", methods=["GET"])
-@admin_required
-def get_candidates():
-    items = list_candidates()
-    return jsonify({"success": True, "total": len(items), "candidates": items})
+@api.route("/leads", methods=["GET"])
+@yonetici_gerekli
+def leadleri_listele():
+    """Dönen: {basari, toplam, leadler: [{id, isim, telefon, eposta, pozisyon, mesaj, tarih}]}"""
+    try:
+        leadler = tum_leadler()
+    except VeritabaniHatasi as e:
+        return jsonify({"basari": False, "hata": str(e)}), 500
+    return jsonify({"basari": True, "toplam": len(leadler), "leadler": leadler})
