@@ -31,12 +31,16 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-gizli-anahtar")
     DATABASE_URL = os.environ.get("DATABASE_URL", "onbuddy.db")
 
-    # Yapay zekâ: Groq. Ana model kota (429) verirse bir kez yedek modelle denenir.
+    # Yapay zekâ: Groq. Ana model kota (429) verirse veya erişilemezse (404) bir kez yedek modelle denenir.
+    # Not: Bu Groq hesabının Llama modellerine erişimi yok (model_not_found); gpt-oss modelleri kullanılır.
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-    GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-    GROQ_FALLBACK_MODEL = os.environ.get("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
+    GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+    GROQ_FALLBACK_MODEL = os.environ.get("GROQ_FALLBACK_MODEL", "openai/gpt-oss-120b")
+    # gpt-oss "düşünen" modeldir: düşünme kısa tutulur ve cevapta gönderilmez. Boşsa parametre gönderilmez.
+    AI_REASONING_EFFORT = os.environ.get("AI_REASONING_EFFORT", "low").strip()
     AI_TEMPERATURE = _sayi("AI_TEMPERATURE", 0.3, float)
-    AI_MAX_TOKENS = _sayi("AI_MAX_TOKENS", 400)
+    # Düşünme token'ları da bu sınırdan yiyebileceği için cevap uzunluğundan geniş tutulur
+    AI_MAX_TOKENS = _sayi("AI_MAX_TOKENS", 800)
     AI_TIMEOUT = _sayi("AI_TIMEOUT", 15)            # saniye
     AI_HISTORY_MAX_MESSAGES = _sayi("AI_HISTORY_MAX_MESSAGES", 6)
     AI_HISTORY_MAX_CHARS = _sayi("AI_HISTORY_MAX_CHARS", 2400)

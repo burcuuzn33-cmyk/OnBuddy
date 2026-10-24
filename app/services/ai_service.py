@@ -29,10 +29,12 @@ class AIServiceError(Exception):
     durum_kodu: kullanıcıya dönecek HTTP kodu (429 = kota doldu, 503 = servis kullanılamıyor)
     """
 
-    def __init__(self, mesaj, durum_kodu=503, model=None):
+    def __init__(self, mesaj, durum_kodu=503, model=None, yedek_denenebilir=False):
         super().__init__(mesaj)
         self.durum_kodu = durum_kodu
         self.model = model
+        # Kota dolu (429) veya model bulunamadı (404): başka bir modelle denemek anlamlı
+        self.yedek_denenebilir = yedek_denenebilir
 
 
 @dataclass
@@ -47,7 +49,7 @@ class YanitSonucu:
 
 class AIService:
     def yanit_uret(self, mesaj, gecmis, cekirdek, parcalar):
-        """Sistem mesajını kurar, Groq'a sorar. Ana model kota verirse bir kez yedek modelle dener."""
+        """Sistem mesajını kurar, Groq'a sorar. Ana model kota verir veya erişilemezse bir kez yedek modelle dener."""
         if not Config.GROQ_API_KEY:
             log.warning("GROQ_API_KEY yok, demo modunda yanıt veriliyor.")
             return YanitSonucu(cevap=DEMO_YANITI, model="demo", demo=True)
@@ -57,9 +59,10 @@ class AIService:
             return self._groq_cagir(Config.GROQ_MODEL, mesajlar)
         except AIServiceError as e:
             yedek = Config.GROQ_FALLBACK_MODEL
-            # Groq'ta kota model başına ayrıdır; ana model dolduysa yedek model hâlâ cevap verebilir
-            if e.durum_kodu == 429 and yedek and yedek != Config.GROQ_MODEL:
-                log.warning("%s kotası doldu, yedek model %s deneniyor.", Config.GROQ_MODEL, yedek)
+            # Groq'ta kota model başına ayrıdır; ana model dolduysa veya hesapta erişimi yoksa
+            # yedek model hâlâ cevap verebilir
+            if e.yedek_denenebilir and yedek and yedek != Config.GROQ_MODEL:
+                log.warning("%s kullanılamadı, yedek model %s deneniyor.", Config.GROQ_MODEL, yedek)
                 return self._groq_cagir(yedek, mesajlar)
             raise
 
@@ -105,15 +108,19 @@ class AIService:
     @staticmethod
     def _groq_cagir(model, mesajlar):
         baslangic = time.monotonic()
+        govde = {
+            "model": model,
+            "messages": mesajlar,
+            "temperature": Config.AI_TEMPERATURE,
+            "max_completion_tokens": Config.AI_MAX_TOKENS,
+        }
+        if Config.AI_REASONING_EFFORT:
+            govde["reasoning_effort"] = Config.AI_REASONING_EFFORT
+            govde["include_reasoning"] = False     # düşünme metni gereksiz yere geri gelmesin
         try:
             yanit = requests.post(
                 GROQ_URL,
-                json={
-                    "model": model,
-                    "messages": mesajlar,
-                    "temperature": Config.AI_TEMPERATURE,
-                    "max_completion_tokens": Config.AI_MAX_TOKENS,
-                },
+                json=govde,
                 headers={"Authorization": f"Bearer {Config.GROQ_API_KEY}"},
                 timeout=Config.AI_TIMEOUT,
             )
@@ -127,7 +134,13 @@ class AIService:
         if yanit.status_code == 429:
             log.warning("Groq kota sınırı (%s): %s", model, yanit.text[:200])
             raise AIServiceError(
-                "Şu an çok yoğunuz, lütfen birkaç saniye sonra tekrar deneyin.", 429, model=model
+                "Şu an çok yoğunuz, lütfen birkaç saniye sonra tekrar deneyin.", 429,
+                model=model, yedek_denenebilir=True,
+            )
+        if yanit.status_code == 404:
+            log.error("Groq modeli bulunamadı veya hesapta erişim yok (%s): %s", model, yanit.text[:200])
+            raise AIServiceError(
+                "Yapay zekâ servisi şu an kullanılamıyor.", model=model, yedek_denenebilir=True
             )
         if yanit.status_code == 401:
             log.critical("Groq API anahtarı geçersiz.")
