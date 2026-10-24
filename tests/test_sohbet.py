@@ -39,7 +39,7 @@ def test_kullanim_kaydi_icerik_tutmadan_yazilir(app, client, groq):
     groq.yanitlar.append(groq_cevabi("tamam", prompt=900, cevap=40))
     client.post("/api/sohbet", json={"mesaj": "demo"})
     assert kullanim_kayitlari(app) == [
-        {"model": "llama-3.3-70b-versatile", "prompt_token": 900, "cevap_token": 40, "durum": "basarili"}
+        {"model": "openai/gpt-oss-20b", "prompt_token": 900, "cevap_token": 40, "durum": "basarili"}
     ]
 
 
@@ -53,7 +53,7 @@ def test_kota_hatasi_429_doner_ve_kaydedilir(app, client, groq):
 def test_gunluk_butce_dolunca_groqa_gidilmez(app, client, groq):
     app.config["AI_DAILY_TOKEN_BUDGET"] = 1000
     with app.app_context():
-        database.ai_kullanim_ekle("llama-3.3-70b-versatile", 900, 100, 10, "basarili")
+        database.ai_kullanim_ekle("openai/gpt-oss-20b", 900, 100, 10, "basarili")
     r = client.post("/api/sohbet", json={"mesaj": "demo"})
     assert r.get_json()["cevap"] == BUTCE_DOLDU_YANITI
     assert groq.istekler == []

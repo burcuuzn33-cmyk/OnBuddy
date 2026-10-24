@@ -4,7 +4,7 @@ Wix Studio sitemizdeki ziyaretçilerle yapay zekâ üzerinden Türkçe sohbet ed
 iletişim bilgisi bırakan adayları kaydeden Flask backend'i. İki arayüz vardır:
 karşılama sayfası (sohbet + form) ve adayların listelendiği yönetim paneli.
 
-**Teknolojiler:** Python · Flask · SQLite (FTS5) · Groq (llama-3.3-70b-versatile) · Wix Velo · Render
+**Teknolojiler:** Python · Flask · SQLite (FTS5) · Groq (openai/gpt-oss-20b) · Wix Velo · Render
 
 ## Mimari
 
@@ -36,8 +36,9 @@ Tek asistan iki tür ziyaretçiye cevap verir; rol seçimi yoktur, model soruyu 
    (Türkçe ekler için kelimenin ilk 5 harfiyle önek araması). En alakalı 4 parça alınır.
 2. Sistem mesajı = `knowledge/cekirdek.md` + bulunan parçalar (`<bilgi>` etiketleri içinde).
    Parça bulunamazsa model bilmediğini söyler.
-3. Groq'a gönderilir (`llama-3.3-70b-versatile`, temperature 0.3). Kota (429) dolarsa bir kez
-   `llama-3.1-8b-instant` ile denenir. Boş veya yarım kalmış cevap gösterilmez.
+3. Groq'a gönderilir (`openai/gpt-oss-20b`, temperature 0.3, `reasoning_effort: low`). Kota (429)
+   dolarsa veya model hesapta erişilemezse (404) bir kez `openai/gpt-oss-120b` ile denenir.
+   Boş veya yarım kalmış cevap gösterilmez. (Bu Groq hesabının Llama modellerine erişimi yoktur.)
 4. Token kullanımı `ai_kullanim` tablosuna yazılır (mesaj içeriği yazılmaz). Günlük bütçe
    (`AI_DAILY_TOKEN_BUDGET`) dolunca Groq'a gidilmez.
 

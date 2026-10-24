@@ -49,16 +49,32 @@ def test_basarili_cevap_ve_parametreler(groq):
     groq.yanitlar.append(groq_cevabi("Merhaba!", prompt=120, cevap=8))
     sonuc = ai_service.yanit_uret("selam", [], "ç", [PARCA])
     assert sonuc.cevap == "Merhaba!"
-    assert (sonuc.model, sonuc.prompt_token, sonuc.cevap_token) == ("llama-3.3-70b-versatile", 120, 8)
+    assert (sonuc.model, sonuc.prompt_token, sonuc.cevap_token) == ("openai/gpt-oss-20b", 120, 8)
     istek = groq.istekler[0]
-    assert istek["temperature"] == 0.3 and istek["max_completion_tokens"] == 400
+    assert istek["temperature"] == 0.3 and istek["max_completion_tokens"] == 800
+    assert istek["reasoning_effort"] == "low" and istek["include_reasoning"] is False
 
 
-def test_429_olunca_yedek_model_denenir(groq):
-    groq.yanitlar += [SahteYanit(429, {}), groq_cevabi("yedekten")]
+def test_reasoning_ayari_bossa_parametre_gonderilmez(groq, monkeypatch):
+    monkeypatch.setattr(Config, "AI_REASONING_EFFORT", "")
+    groq.yanitlar.append(groq_cevabi())
+    ai_service.yanit_uret("selam", [], "ç", [])
+    assert "reasoning_effort" not in groq.istekler[0] and "include_reasoning" not in groq.istekler[0]
+
+
+@pytest.mark.parametrize("durum", [429, 404])
+def test_kota_veya_model_yoksa_yedek_model_denenir(groq, durum):
+    groq.yanitlar += [SahteYanit(durum, {}), groq_cevabi("yedekten")]
     sonuc = ai_service.yanit_uret("selam", [], "ç", [])
-    assert sonuc.cevap == "yedekten" and sonuc.model == "llama-3.1-8b-instant"
-    assert [i["model"] for i in groq.istekler] == ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    assert sonuc.cevap == "yedekten" and sonuc.model == "openai/gpt-oss-120b"
+    assert [i["model"] for i in groq.istekler] == ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+
+
+def test_iki_model_de_bulunamazsa_503(groq):
+    groq.yanitlar += [SahteYanit(404, {}), SahteYanit(404, {})]
+    with pytest.raises(AIServiceError) as hata:
+        ai_service.yanit_uret("selam", [], "ç", [])
+    assert hata.value.durum_kodu == 503 and len(groq.istekler) == 2
 
 
 def test_iki_model_de_429_ise_429_hatasi(groq):
@@ -88,3 +104,4 @@ def test_hatali_yanitlar_503_olur(groq, yanit):
     with pytest.raises(AIServiceError) as hata:
         ai_service.yanit_uret("selam", [], "ç", [])
     assert hata.value.durum_kodu == 503
+    assert len(groq.istekler) == 1      # bu hatalarda yedek model denenmez
