@@ -1,0 +1,30 @@
+[
+  {
+    "baslik": "Kıdemli Backend Geliştirici",
+    "departman": "Yazılım",
+    "lokasyon": "Balıkesir",
+    "calisma_sekli": "Hibrit",
+    "aciklama": "Python ve Flask ile API geliştirme, en az 4 yıl deneyim, SQL ve bulut servisleri bilgisi."
+  },
+  {
+    "baslik": "Mobil Uygulama Geliştirici",
+    "departman": "Yazılım",
+    "lokasyon": "Uzaktan",
+    "calisma_sekli": "Tam zamanlı",
+    "aciklama": "React Native ile iOS ve Android uygulama geliştirme, en az 2 yıl deneyim."
+  },
+  {
+    "baslik": "Müşteri Başarı Uzmanı",
+    "departman": "Müşteri Başarı",
+    "lokasyon": "Balıkesir",
+    "calisma_sekli": "Hibrit",
+    "aciklama": "Kurumsal müşterilerin OnBuddy kurulumuna ve İK ekiplerinin eğitimine destek, iyi derecede İngilizce."
+  },
+  {
+    "baslik": "İnsan Kaynakları Stajyeri",
+    "departman": "İnsan Kaynakları",
+    "lokasyon": "Balıkesir",
+    "calisma_sekli": "Yaz stajı (2 ay)",
+    "aciklama": "İşe alım ve oryantasyon süreçlerinde destek, üniversite 3. veya 4. sınıf öğrencisi."
+  }
+]

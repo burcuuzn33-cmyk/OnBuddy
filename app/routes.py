@@ -1,11 +1,12 @@
 """HTTP rotaları: isteği karşılar, doğrular ve doğru katmana yönlendirir.
 
-Burada SQL veya yapay zekâ kodu YOKTUR; sadece database.py ve ai_service.py fonksiyonları çağrılır.
+Burada SQL veya yapay zekâ kodu YOKTUR; sadece database.py ve services/ fonksiyonları çağrılır.
 """
 import hmac
 from functools import wraps
 from flask import Blueprint, request, jsonify, render_template, current_app
-from app.services.ai_service import ai_service, AIServiceError
+from app.services.ai_service import AIServiceError
+from app.services.sohbet_service import sohbet_et
 from app.database import lead_ekle, tum_leadler, VeritabaniHatasi
 
 api = Blueprint("api", __name__)            # /api önekiyle kaydedilir (__init__.py)
@@ -38,6 +39,13 @@ def yonetici_gerekli(fonksiyon):
     return sarmalayici
 
 
+def _hata(mesaj, kod, bekleme=None):
+    yanit = jsonify({"basari": False, "hata": mesaj})
+    if bekleme:
+        yanit.headers["Retry-After"] = str(bekleme)
+    return yanit, kod
+
+
 # ── Sayfalar ──────────────────────────────────────────
 @sayfalar.route("/")
 def karsilama_sayfasi():
@@ -53,18 +61,34 @@ def yonetim_paneli():
 # ── API ───────────────────────────────────────────────
 @api.route("/sohbet", methods=["POST"])
 def sohbet():
-    """Gönderilen: {mesaj, gecmis}  →  Dönen: {basari, cevap}"""
+    """Gönderilen: {mesaj, gecmis}  →  Dönen: {basari, cevap, yonlendirme}
+
+    yonlendirme: "demo_formu" | "basvuru_formu" | null — Wix'in göstereceği form butonu
+    """
+    # IP başına sınır: Groq kotasını tek bir ziyaretçi bitiremesin
+    bekleme = current_app.extensions["sohbet_hiz_siniri"].izin_ver(request.remote_addr or "bilinmiyor")
+    if bekleme:
+        return _hata("Çok fazla mesaj gönderdiniz, lütfen biraz sonra tekrar deneyin.", 429, bekleme)
+
     veri = _json_govde()
     mesaj = _metin(veri, "mesaj")
     if not mesaj:
-        return jsonify({"basari": False, "hata": "Mesaj boş olamaz."}), 400
+        return _hata("Mesaj boş olamaz.", 400)
+    sinir = current_app.config["CHAT_MESSAGE_MAX_CHARS"]
+    if len(mesaj) > sinir:
+        return _hata(f"Mesaj en fazla {sinir} karakter olabilir.", 400)
+    gecmis = veri.get("gecmis", [])
+    if not isinstance(gecmis, list):
+        return _hata("gecmis alanı bir liste olmalıdır.", 400)
 
     try:
-        cevap = ai_service.yanit_uret(mesaj, veri.get("gecmis", []))
-        return jsonify({"basari": True, "cevap": cevap})
+        sonuc = sohbet_et(mesaj, gecmis)
     except AIServiceError as e:
         # Yapay zekâ servisi çökerse uygulama çökmez; kibar bir hata döner
-        return jsonify({"basari": False, "hata": str(e)}), 503
+        return _hata(str(e), e.durum_kodu)
+    except VeritabaniHatasi as e:
+        return _hata(str(e), 500)
+    return jsonify({"basari": True, "cevap": sonuc["cevap"], "yonlendirme": sonuc["yonlendirme"]})
 
 
 @api.route("/leads", methods=["POST"])
