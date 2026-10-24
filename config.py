@@ -58,6 +58,9 @@ class Config:
     CHAT_RATE_LIMIT_REQUESTS = _sayi("CHAT_RATE_LIMIT_REQUESTS", 10)
     CHAT_RATE_LIMIT_WINDOW_SECONDS = _sayi("CHAT_RATE_LIMIT_WINDOW_SECONDS", 60)
     CHAT_MESSAGE_MAX_CHARS = _sayi("CHAT_MESSAGE_MAX_CHARS", 1000)
+    # Form (POST /api/leads): IP başına 10 dakikada en fazla 5 kayıt
+    LEAD_RATE_LIMIT_REQUESTS = _sayi("LEAD_RATE_LIMIT_REQUESTS", 5)
+    LEAD_RATE_LIMIT_WINDOW_SECONDS = _sayi("LEAD_RATE_LIMIT_WINDOW_SECONDS", 600)
     MAX_CONTENT_LENGTH = _sayi("MAX_CONTENT_LENGTH", 65536)  # byte
 
     # Hangi sitelerin (ör. Wix sitemiz) API'ye istek atabileceği.
