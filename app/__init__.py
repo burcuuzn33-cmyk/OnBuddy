@@ -36,7 +36,7 @@ def create_app(config_adi=None, ayarlar=None):
     # 3) Veritabanı tablolarını hazırla (yoksa oluşturur)
     init_db(app)
 
-    # 4) Bilgi dosyaları (cekirdek.md, bilgi.md) yoksa veya boşsa açılış başarısız olur
+    # 4) Asistan belgesi (asistan.md) yoksa veya boşsa açılış başarısız olur
     from app.services.knowledge_service import bilgi_servisi
     from app.services.hiz_siniri import HizSiniri
     bilgi_servisi.dogrula(app.config)

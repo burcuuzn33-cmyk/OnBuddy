@@ -1,18 +1,20 @@
-"""Yapay zekâ servis katmanı: tüm Groq API çağrıları yalnızca bu dosyada bulunur.
+"""Yapay zekâ servis katmanı: tüm Groq ve Gemini API çağrıları yalnızca bu dosyada bulunur.
 
 Bu dosya Flask, HTTP rotaları veya veritabanı hakkında hiçbir şey bilmez;
-sistem mesajını, geçmişi ve bilgi belgesini alır, Groq'a sorar ve sonucu döndürür.
+asistan belgesini (kurallar + bilgi) ve geçmişi alır, sağlayıcıları sırayla dener ve sonucu döndürür.
 """
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import requests
 from config import Config
 
 log = logging.getLogger(__name__)
 
+# İkisi de OpenAI uyumlu "chat/completions" biçimini konuşur; fark yalnızca adres, anahtar ve model.
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 DEMO_YANITI = (
     "Sistem demo modunda çalışıyor: API anahtarı tanımlı değil. Lütfen .env dosyanızı kontrol edin."
@@ -20,17 +22,17 @@ DEMO_YANITI = (
 
 
 class AIServiceError(Exception):
-    """Yapay zekâ servisine ulaşılamadığında fırlatılır; rotalar bunu JSON hataya çevirir.
+    """Hiçbir sağlayıcıdan cevap alınamadığında fırlatılır; rotalar bunu JSON hataya çevirir.
 
     durum_kodu: kullanıcıya dönecek HTTP kodu (429 = kota doldu, 503 = servis kullanılamıyor)
+    denemeler: başarısız olan her sağlayıcı denemesi (kullanım kaydı için); tek denemede kendisidir
     """
 
-    def __init__(self, mesaj, durum_kodu=503, model=None, yedek_denenebilir=False):
+    def __init__(self, mesaj, durum_kodu=503, model=None):
         super().__init__(mesaj)
         self.durum_kodu = durum_kodu
         self.model = model
-        # Kota dolu (429) veya model bulunamadı (404): başka bir modelle denemek anlamlı
-        self.yedek_denenebilir = yedek_denenebilir
+        self.denemeler = [self]
 
 
 @dataclass
@@ -41,30 +43,69 @@ class YanitSonucu:
     cevap_token: int = 0
     sure_ms: int = 0
     demo: bool = False
+    # Bu cevaptan önce başarısız olan sağlayıcı denemeleri (ör. Groq kotası doldu, cevap Gemini'den geldi)
+    basarisiz: list = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Saglayici:
+    ad: str
+    url: str
+    anahtar: str
+    model: str
 
 
 class AIService:
-    def yanit_uret(self, mesaj, gecmis, cekirdek, bilgi):
-        """Sistem mesajını kurar, Groq'a sorar. Ana model kota verir veya erişilemezse bir kez yedek modelle dener."""
-        if not Config.GROQ_API_KEY:
-            log.warning("GROQ_API_KEY yok, demo modunda yanıt veriliyor.")
+    def saglayicilar(self):
+        """AI_PROVIDER_ORDER sırasına göre, anahtarı tanımlı sağlayıcılar."""
+        tanimli = {
+            "groq": Saglayici("groq", GROQ_URL, Config.GROQ_API_KEY, Config.GROQ_MODEL),
+            "gemini": Saglayici("gemini", GEMINI_URL, Config.GEMINI_API_KEY, Config.GEMINI_MODEL),
+        }
+        sira = []
+        for ad in Config.AI_PROVIDER_ORDER:
+            s = tanimli.get(ad)
+            if s and s.anahtar and s.model and s not in sira:
+                sira.append(s)
+        return sira
+
+    def yanit_uret(self, mesaj, gecmis, belge):
+        """Asistan belgesiyle mesajları kurar; sağlayıcıları sırayla dener, ilk geçerli cevabı döndürür.
+
+        Bir sağlayıcıdan geçerli cevap alınamazsa (kota, zaman aşımı, sunucu hatası, boş cevap...) sıradakine
+        geçilir. Tüm denemeler AI_TOTAL_TIMEOUT içinde kalır; süre dolduysa sıradaki denenmez.
+        """
+        zincir = self.saglayicilar()
+        if not zincir:
+            log.warning("Yapay zekâ API anahtarı yok, demo modunda yanıt veriliyor.")
             return YanitSonucu(cevap=DEMO_YANITI, model="demo", demo=True)
 
-        mesajlar = self.mesajlari_olustur(mesaj, gecmis, cekirdek, bilgi)
-        try:
-            return self._groq_cagir(Config.GROQ_MODEL, mesajlar)
-        except AIServiceError as e:
-            yedek = Config.GROQ_FALLBACK_MODEL
-            # Groq'ta kota model başına ayrıdır; ana model dolduysa veya hesapta erişimi yoksa
-            # yedek model hâlâ cevap verebilir
-            if e.yedek_denenebilir and yedek and yedek != Config.GROQ_MODEL:
-                log.warning("%s kullanılamadı, yedek model %s deneniyor.", Config.GROQ_MODEL, yedek)
-                return self._groq_cagir(yedek, mesajlar)
-            raise
+        mesajlar = self.mesajlari_olustur(mesaj, gecmis, belge)
+        baslangic = time.monotonic()
+        denemeler = []
+        for s in zincir:
+            kalan = Config.AI_TOTAL_TIMEOUT - (time.monotonic() - baslangic)
+            if denemeler and kalan < 1:
+                log.warning("Toplam süre doldu, %s denenmedi.", s.ad)
+                break
+            try:
+                sonuc = self._cagir(s, mesajlar, min(Config.AI_TIMEOUT, kalan))
+            except AIServiceError as e:
+                denemeler.append(e)
+                if s is not zincir[-1]:
+                    log.warning("%s (%s) kullanılamadı, sıradaki sağlayıcı deneniyor.", s.ad, s.model)
+                continue
+            sonuc.basarisiz = denemeler
+            return sonuc
 
-    def mesajlari_olustur(self, mesaj, gecmis, cekirdek, bilgi):
-        """Sıra önemli: sistem mesajı (çekirdek + bilgi belgesi), sonra geçmiş, en sonda yeni kullanıcı mesajı."""
-        mesajlar = [{"role": "system", "content": f"{cekirdek}\n\n<bilgi>\n{bilgi}\n</bilgi>"}]
+        # Hepsi başarısız: hepsi kota hatasıysa 429, aksi halde asıl sorunu anlatan son hata (503) döner
+        hata = next((e for e in reversed(denemeler) if e.durum_kodu != 429), denemeler[-1])
+        hata.denemeler = denemeler
+        raise hata
+
+    def mesajlari_olustur(self, mesaj, gecmis, belge):
+        """Sıra önemli: sistem mesajı (asistan belgesi), sonra geçmiş, en sonda yeni kullanıcı mesajı."""
+        mesajlar = [{"role": "system", "content": belge}]
         mesajlar += self.gecmisi_temizle(gecmis)
         mesajlar.append({"role": "user", "content": mesaj})
         return mesajlar
@@ -95,7 +136,8 @@ class AIService:
         return list(reversed(secilen))
 
     @staticmethod
-    def _groq_cagir(model, mesajlar):
+    def _cagir(saglayici, mesajlar, zaman_asimi):
+        ad, model = saglayici.ad, saglayici.model
         baslangic = time.monotonic()
         govde = {
             "model": model,
@@ -105,37 +147,35 @@ class AIService:
         }
         if Config.AI_REASONING_EFFORT:
             govde["reasoning_effort"] = Config.AI_REASONING_EFFORT
-            govde["include_reasoning"] = False     # düşünme metni gereksiz yere geri gelmesin
+            if ad == "groq":
+                govde["include_reasoning"] = False     # düşünme metni gereksiz yere geri gelmesin
         try:
             yanit = requests.post(
-                GROQ_URL,
+                saglayici.url,
                 json=govde,
-                headers={"Authorization": f"Bearer {Config.GROQ_API_KEY}"},
-                timeout=Config.AI_TIMEOUT,
+                headers={"Authorization": f"Bearer {saglayici.anahtar}"},   # anahtar adrese yazılmaz, loga düşmez
+                timeout=zaman_asimi,
             )
         except requests.Timeout as e:
-            log.error("Groq zaman aşımı (%s).", model)
+            log.error("%s zaman aşımı (%s).", ad, model)
             raise AIServiceError("Yapay zekâ servisi zamanında yanıt vermedi.", model=model) from e
         except requests.RequestException as e:
-            log.error("Groq bağlantı hatası (%s): %s", model, e)
+            log.error("%s bağlantı hatası (%s): %s", ad, model, e)
             raise AIServiceError("Yapay zekâ servisine bağlanılamadı.", model=model) from e
 
         if yanit.status_code == 429:
-            log.warning("Groq kota sınırı (%s): %s", model, yanit.text[:200])
+            log.warning("%s kota sınırı (%s): %s", ad, model, yanit.text[:200])
             raise AIServiceError(
-                "Şu an çok yoğunuz, lütfen birkaç saniye sonra tekrar deneyin.", 429,
-                model=model, yedek_denenebilir=True,
+                "Şu an çok yoğunuz, lütfen birkaç saniye sonra tekrar deneyin.", 429, model=model
             )
         if yanit.status_code == 404:
-            log.error("Groq modeli bulunamadı veya hesapta erişim yok (%s): %s", model, yanit.text[:200])
-            raise AIServiceError(
-                "Yapay zekâ servisi şu an kullanılamıyor.", model=model, yedek_denenebilir=True
-            )
-        if yanit.status_code == 401:
-            log.critical("Groq API anahtarı geçersiz.")
+            log.error("%s modeli bulunamadı veya erişim yok (%s): %s", ad, model, yanit.text[:200])
+            raise AIServiceError("Yapay zekâ servisi şu an kullanılamıyor.", model=model)
+        if yanit.status_code in (401, 403):
+            log.critical("%s API anahtarı geçersiz veya yetkisiz (HTTP %s).", ad, yanit.status_code)
             raise AIServiceError("Yapay zekâ servisi şu an kullanılamıyor.", model=model)
         if yanit.status_code != 200:
-            log.error("Groq HTTP %s (%s): %s", yanit.status_code, model, yanit.text[:300])
+            log.error("%s HTTP %s (%s): %s", ad, yanit.status_code, model, yanit.text[:300])
             raise AIServiceError("Yapay zekâ servisi şu an yanıt veremiyor.", model=model)
 
         try:
@@ -143,12 +183,12 @@ class AIService:
             secim = veri["choices"][0]
             cevap = (secim["message"]["content"] or "").strip()
         except (ValueError, KeyError, IndexError, TypeError) as e:
-            log.error("Groq beklenmeyen yanıt biçimi (%s).", model)
+            log.error("%s beklenmeyen yanıt biçimi (%s).", ad, model)
             raise AIServiceError("Yapay zekâ servisi geçersiz yanıt döndürdü.", model=model) from e
 
         # Boş veya token sınırında yarım kalmış cevap kullanıcıya gösterilmez
         if not cevap or secim.get("finish_reason") == "length":
-            log.error("Groq boş veya yarım cevap döndürdü (%s, finish_reason=%s).", model, secim.get("finish_reason"))
+            log.error("%s boş veya yarım cevap döndürdü (%s, finish_reason=%s).", ad, model, secim.get("finish_reason"))
             raise AIServiceError("Yapay zekâ eksik bir yanıt üretti, lütfen tekrar deneyin.", model=model)
 
         kullanim = veri.get("usage") or {}
