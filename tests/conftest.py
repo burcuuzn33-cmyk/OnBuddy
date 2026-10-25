@@ -8,6 +8,7 @@ from config import Config
 def app(tmp_path, monkeypatch):
     # Testler gerçek Groq'a gitmez; anahtar varsayılan olarak boş (demo modu)
     monkeypatch.setattr(Config, "GROQ_API_KEY", "")
+    monkeypatch.setattr(Config, "GEMINI_API_KEY", "")
     return create_app("development", {"DATABASE_URL": str(tmp_path / "test.db")})
 
 
@@ -41,12 +42,17 @@ def groq_cevabi(icerik="Merhaba!", bitis="stop", prompt=100, cevap=20):
 def groq(monkeypatch):
     """Groq'u taklit eder: sıradaki yanıtları verir, gönderilen istekleri kaydeder."""
     monkeypatch.setattr(Config, "GROQ_API_KEY", "test-anahtari")
+    monkeypatch.setattr(Config, "GEMINI_API_KEY", "")     # yedek isteyen testler kendisi açar
 
     class Sahte:
         yanitlar = []
         istekler = []
+        adresler = []
+        zaman_asimlari = []
 
         def post(self, url, json=None, headers=None, timeout=None):
+            self.adresler.append(url)
+            self.zaman_asimlari.append(timeout)
             self.istekler.append(json)
             yanit = self.yanitlar.pop(0)
             if isinstance(yanit, Exception):
@@ -54,6 +60,6 @@ def groq(monkeypatch):
             return yanit
 
     sahte = Sahte()
-    sahte.yanitlar, sahte.istekler = [], []
+    sahte.yanitlar, sahte.istekler, sahte.adresler, sahte.zaman_asimlari = [], [], [], []
     monkeypatch.setattr("app.services.ai_service.requests.post", sahte.post)
     return sahte

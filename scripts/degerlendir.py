@@ -1,25 +1,34 @@
-"""Gerçek Groq ile 25 soruluk değerlendirme. Elle çalıştırılır, cevaplar gözle kontrol edilir.
+"""Gerçek yapay zekâ ile 25 soruluk değerlendirme. Elle çalıştırılır, cevaplar gözle kontrol edilir.
 
-Kullanım (proje klasöründen, .env'de GROQ_API_KEY dolu olmalı):
-    python -m scripts.degerlendir
+Kullanım (proje klasöründen, .env'de ilgili API anahtarı dolu olmalı):
+    python -m scripts.degerlendir                      # AI_PROVIDER_ORDER sırasıyla (Groq, olmazsa Gemini)
+    python -m scripts.degerlendir --saglayici gemini   # yalnızca Gemini'yi dener (yedek davranışını ölçmek için)
+    python -m scripts.degerlendir --saglayici groq
 
 Her soru ayrı bir sohbettir (geçmiş gönderilmez). Groq'un dakikalık sınırına takılmamak için
 sorular arasında bekler. Kullanım kayıtları geçici bir veritabanına yazılır, onbuddy.db'ye dokunulmaz.
 """
+import argparse
 import json
 import tempfile
 import time
 from pathlib import Path
 
 from app import create_app
+from app.services.ai_service import ai_service
 from config import Config
 
 BEKLEME_SANIYE = 4
 
 
 def main():
-    if not Config.GROQ_API_KEY:
-        raise SystemExit("GROQ_API_KEY tanımlı değil (.env dosyasını kontrol edin).")
+    arg = argparse.ArgumentParser()
+    arg.add_argument("--saglayici", choices=["groq", "gemini"], help="yalnızca bu sağlayıcıyı dene")
+    secenek = arg.parse_args()
+    if secenek.saglayici:
+        Config.AI_PROVIDER_ORDER = [secenek.saglayici]
+    if not ai_service.saglayicilar():
+        raise SystemExit("Seçilen sağlayıcının API anahtarı tanımlı değil (.env dosyasını kontrol edin).")
 
     sorular = json.loads((Path(__file__).parent / "degerlendirme_sorulari.json").read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as klasor:

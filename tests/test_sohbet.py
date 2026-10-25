@@ -2,6 +2,7 @@ import pytest
 
 from app import create_app, database
 from app.services.sohbet_service import yonlendirmeyi_ayir, BUTCE_DOLDU_YANITI
+from config import Config
 from tests.conftest import SahteYanit, groq_cevabi
 
 
@@ -60,6 +61,27 @@ def test_kota_hatasi_429_doner_ve_kaydedilir(app, client, groq):
     r = client.post("/api/sohbet", json={"mesaj": "demo"})
     assert r.status_code == 429 and r.get_json()["basari"] is False
     assert kullanim_kayitlari(app)[0]["durum"] == "kota"
+
+
+def test_groq_dusunce_gemini_cevap_verir_ve_ikisi_de_kaydedilir(app, client, groq, monkeypatch):
+    monkeypatch.setattr(Config, "GEMINI_API_KEY", "gemini-test-anahtari")
+    groq.yanitlar += [SahteYanit(429, {}), groq_cevabi("Demo için formu doldurun.\n[FORM:demo]", prompt=800, cevap=30)]
+    r = client.post("/api/sohbet", json={"mesaj": "demo"})
+    assert r.get_json() == {"basari": True, "cevap": "Demo için formu doldurun.", "yonlendirme": "demo_formu"}
+    assert kullanim_kayitlari(app) == [
+        {"model": "openai/gpt-oss-20b", "prompt_token": 0, "cevap_token": 0, "durum": "kota"},
+        {"model": "gemini-3.5-flash-lite", "prompt_token": 800, "cevap_token": 30, "durum": "basarili"},
+    ]
+
+
+def test_iki_saglayici_da_dusunce_ikisi_de_kaydedilir(app, client, groq, monkeypatch):
+    monkeypatch.setattr(Config, "GEMINI_API_KEY", "gemini-test-anahtari")
+    groq.yanitlar += [SahteYanit(500, {}), SahteYanit(429, {})]
+    r = client.post("/api/sohbet", json={"mesaj": "demo"})
+    assert r.status_code == 503 and r.get_json()["basari"] is False
+    assert [(k["model"], k["durum"]) for k in kullanim_kayitlari(app)] == [
+        ("openai/gpt-oss-20b", "hata"), ("gemini-3.5-flash-lite", "kota"),
+    ]
 
 
 def test_gunluk_butce_dolunca_groqa_gidilmez(app, client, groq):

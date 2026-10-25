@@ -11,14 +11,14 @@ Site Wix Studio'da hazırlandı; asıl iş burada, Python ile yazılmış küç�
 ## Mimari
 
 Sistem üç parçadan oluşur: Wix'te duran site, Render'da çalışan bu backend ve cevapları üreten
-Groq yapay zekâ servisi. Ziyaretçi yalnızca Wix sitesini görür; site, arka planda backend'e istek atar,
-backend de gerekirse Groq'a sorar.
+yapay zekâ servisi (Groq, yedek olarak Gemini). Ziyaretçi yalnızca Wix sitesini görür; site, arka planda backend'e istek atar,
+backend de gerekirse yapay zekâ servisine (önce Groq, olmazsa Gemini) sorar.
 
 | Parça | Ne yapar |
 |---|---|
 | **Wix sitesi** | Ziyaretçinin gördüğü her şey. Sohbet kutusu, iletişim formu ve şifreli yönetim paneli burada. Backend'e `fetch` ile istek atar. |
 | **Flask backend** (bu depo) | İstekleri doğrular, yapay zekâya sorar, form kayıtlarını SQLite'a yazar. |
-| **Groq** | Soruyu alır, verdiğimiz kurallara ve bilgi belgesine bakarak Türkçe cevap yazar. |
+| **Groq** (ana) ve **Gemini** (yedek) | Soruyu alır, verdiğimiz kurallara ve bilgi belgesine bakarak Türkçe cevap yazar. Groq'tan cevap alınamazsa Gemini yazar. |
 
 Backend'in kendi içinde bir bilgi klasörü ve bir veritabanı vardır: `knowledge/` klasörü asistanın
 kurallarını ve bilgisini, SQLite veritabanı ise form kayıtlarını (`leads`) ve token kullanımını
@@ -29,14 +29,14 @@ kurallarını ve bilgisini, SQLite veritabanı ise form kayıtlarını (`leads`)
 1. Ziyaretçi sohbet kutusuna bir soru yazar (ör. "Demo nasıl alabilirim?").
 2. Wix sitesi, mesajı ve önceki konuşmayı `POST /api/sohbet` adresine gönderir.
 3. Backend mesajı doğrular (boş mu, çok uzun mu) ve IP başına istek sınırına ve günlük token bütçesine bakar.
-4. Backend, Groq'a şunları gönderir: `cekirdek.md` (kurallar), `bilgi.md` (bilgi), sohbet geçmişi ve yeni soru.
-5. Groq cevabı yazar. Cevap bir form önerecekse sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler.
+4. Backend, yapay zekâya (önce Groq) şunları gönderir: `asistan.md` (kurallar ve bilgi), sohbet geçmişi ve yeni soru.
+5. Model cevabı yazar. Groq'tan geçerli cevap gelmezse aynı istek Gemini'ye gider. Cevap bir form önerecekse sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler.
 6. Backend bu etiketi cevaptan siler, token kullanımını veritabanına yazar ve Wix'e
    `{cevap, yonlendirme}` döner.
 7. Wix cevabı sohbet kutusunda gösterir; `yonlendirme` doluysa ilgili form butonunu da çıkarır.
 
-Önemli nokta: asistan **sadece `knowledge/bilgi.md` dosyasındaki bilgiyle** cevap verir. Belgede olmayan
-bir şeyi (fiyat, entegrasyon, maaş vb.) uydurmaması için kurallar `knowledge/cekirdek.md` içinde yazılı.
+Önemli nokta: asistan **sadece `knowledge/asistan.md` içindeki `<bilgi>` bölümüyle** cevap verir. Belgede olmayan
+bir şeyi (fiyat, entegrasyon, maaş vb.) uydurmaması için kurallar aynı dosyanın başında yazılı.
 
 ## Klasör yapısı
 
@@ -48,38 +48,41 @@ app/
 ├── routes.py           API adresleri; sadece gelen isteği doğrular ve ilgili yere yönlendirir
 ├── database.py         Veritabanı sorgularının TAMAMI burada (başka yerde SQL yok)
 ├── services/
-│   ├── sohbet_service.py     Sohbetin akışı: bütçe kontrolü → Groq → kayıt → form yönlendirmesi
-│   ├── ai_service.py         Groq ile konuşan tek dosya (yedek model, hata durumları)
-│   ├── knowledge_service.py  cekirdek.md ve bilgi.md dosyalarını okur
+│   ├── sohbet_service.py     Sohbetin akışı: bütçe kontrolü → yapay zekâ → kayıt → form yönlendirmesi
+│   ├── ai_service.py         Groq ve Gemini ile konuşan tek dosya (yedek sağlayıcı, hata durumları)
+│   ├── knowledge_service.py  asistan.md dosyasını okur
 │   └── hiz_siniri.py         IP başına istek sınırı
 └── templates/          Basit karşılama ve yönetim paneli sayfaları
 knowledge/
-├── cekirdek.md         Asistanın rolü, üslubu ve kuralları
-└── bilgi.md            Asistanın tek bilgi kaynağı (ürün, şirket, kariyer)
-scripts/                Gerçek Groq ile çalışan 24 soruluk elle test
-tests/                  Otomatik testler (Groq'a gitmez)
+└── asistan.md          Asistanın tek belgesi: rolü, üslubu, kuralları ve bilgisi (ürün, şirket, kariyer)
+scripts/                Gerçek yapay zekâ ile çalışan 24 soruluk elle test
+tests/                  Otomatik testler (yapay zekâya gitmez)
 docs/                   Görseller ve ilk Wix kod örnekleri
 ```
 
-Katmanların sınırı bilinçli çizildi: rotalar iş yapmaz, `ai_service.py` yalnızca Groq'u bilir,
+Katmanların sınırı bilinçli çizildi: rotalar iş yapmaz, `ai_service.py` yalnızca Groq ve Gemini'yi bilir,
 `database.py` yalnızca SQL'i bilir. Bir şeyi değiştirmek istediğinde nereye bakacağın belli olsun diye.
 
 ## Yapay zekâ nasıl çalışıyor?
 
-1. Sistem mesajı iki dosyadan kurulur: `cekirdek.md` (kurallar) ve `bilgi.md` (bilgi). `bilgi.md`
-   parçalanmaz ve aranmaz; **dosyanın tamamı her soruda** modele gönderilir.
-2. Model `openai/gpt-oss-20b`'dir. Kota dolarsa veya model bulunamazsa bir kez `openai/gpt-oss-120b` denenir.
+1. Sistem mesajı tek dosyadır: `asistan.md`. Başında kurallar ve üslup, sonunda `<bilgi>` etiketleri arasında
+   bilgi vardır. Dosya parçalanmaz ve aranmaz; **tamamı her soruda** modele gönderilir.
+2. Ana model Groq'taki `openai/gpt-oss-20b`'dir. Groq'tan geçerli cevap alınamazsa (kota, zaman aşımı, sunucu
+   hatası, geçersiz anahtar, boş veya yarım cevap) aynı istek yedek olan Gemini'ye (`gemini-3.5-flash-lite`) gider.
+   Sıra `AI_PROVIDER_ORDER` ile değişir; anahtarı olmayan sağlayıcı atlanır. Tüm denemeler `AI_TOTAL_TIMEOUT`
+   (25 sn) içinde biter. Başarısız her deneme de `ai_kullanim` tablosuna yazılır, böylece Groq'un ne sıklıkla
+   düştüğü görülür. Not: mesajlar yedek durumda Google'a da gider.
 3. Cevap kısa ve düz metin olmalıdır. Model, form önermek istediğinde cevabın sonuna `[FORM:demo]` veya
    `[FORM:basvuru]` yazar. Backend bu etiketi cevaptan siler ve Wix'in göstereceği buton için
    `yonlendirme` alanına çevirir.
 4. Her çağrının token sayısı `ai_kullanim` tablosuna yazılır (mesaj içeriği yazılmaz). Günlük
-   bütçe dolarsa Groq'a hiç gidilmez.
+   bütçe dolarsa yapay zekâya hiç gidilmez.
 
-**Bilgiyi güncellemek için** `knowledge/bilgi.md` dosyasını düzenlemek yeterli. Değişiklik canlıya GitHub
+**Bilgiyi güncellemek için** `knowledge/asistan.md` içindeki `<bilgi>` bölümünü düzenlemek yeterli. Değişiklik canlıya GitHub
 üzerinden gider. Belge her soruda gönderildiği için uzunluğu token harcar; 15.000 karakteri aşarsa
 uygulama açılırken uyarı yazar. Dosyada `<!-- ... -->` içine yazdığın notlar modele gönderilmez.
 
-> `bilgi.md` içindeki kariyer bölümü ve açık pozisyon listesi şimdilik örnek (mock) veridir.
+> `asistan.md` içindeki kariyer bölümü ve açık pozisyon listesi şimdilik örnek (mock) veridir.
 
 ## Mobil uygulama
 
@@ -118,19 +121,20 @@ curl -s -X POST https://onbuddy-f3hp.onrender.com/api/sohbet \
 python3 -m venv venv
 source venv/bin/activate                 # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env                     # sonra .env içine GROQ_API_KEY yaz
+cp .env.example .env                     # sonra .env içine GROQ_API_KEY (ve istersen GEMINI_API_KEY) yaz
 python run.py
 ```
 
-Uygulama http://localhost:5000 adresinde açılır. `GROQ_API_KEY` boşsa sistem demo modunda çalışır
+Uygulama http://localhost:5000 adresinde açılır. İki anahtar da boşsa sistem demo modunda çalışır
 ve gerçek cevap vermez.
 
 ## Testler
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # otomatik testler, Groq'a gitmez
-python -m scripts.degerlendir       # 24 soruluk elle test, gerçek Groq ister
+python -m pytest -q                 # otomatik testler, yapay zekâya gitmez
+python -m scripts.degerlendir       # 24 soruluk elle test, gerçek API anahtarı ister
+python -m scripts.degerlendir --saglayici gemini   # yedeği tek başına ölçmek için
 ```
 
 ## Güvenlik ve koruma
@@ -146,7 +150,7 @@ python -m scripts.degerlendir       # 24 soruluk elle test, gerçek Groq ister
 
 - Build komutu: `pip install -r requirements.txt`
 - Başlatma komutu: `gunicorn run:app`
-- Ortam değişkenleri: `FLASK_ENV=production`, `GROQ_API_KEY`, `SECRET_KEY`, `CORS_ORIGINS`, `ADMIN_TOKEN`
+- Ortam değişkenleri: `FLASK_ENV=production`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `SECRET_KEY`, `CORS_ORIGINS`, `ADMIN_TOKEN`
   (tüm ayarlar ve varsayılanları `.env.example` içinde)
 - `main` dalına birleşen her değişiklik Render'da otomatik yayınlanır.
 

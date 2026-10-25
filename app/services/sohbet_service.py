@@ -1,4 +1,4 @@
-"""Sohbet akışı: günlük bütçe → Groq → kullanım kaydı → yönlendirme.
+"""Sohbet akışı: günlük bütçe → yapay zekâ (Groq, olmazsa Gemini) → kullanım kaydı → yönlendirme.
 
 Rotalar sadece bu fonksiyonu çağırır; yapay zekâ ve veritabanı adımlarını burası birleştirir.
 """
@@ -18,7 +18,7 @@ BUTCE_DOLDU_YANITI = (
     "formunu kullanabilir ya da info@onbuddy.com adresine yazabilirsiniz."
 )
 
-# Model, form önerirken cevabın sonuna [FORM:demo] veya [FORM:basvuru] ekler (bkz. knowledge/cekirdek.md).
+# Model, form önerirken cevabın sonuna [FORM:demo] veya [FORM:basvuru] ekler (bkz. knowledge/asistan.md).
 # Etiket kullanıcıya gösterilmez; Wix'in göstereceği form butonuna çevrilir.
 FORM_ETIKETI = re.compile(r"\[\s*FORM\s*:\s*(demo|basvuru)\s*\]", re.IGNORECASE)
 YONLENDIRME = {"demo": "demo_formu", "basvuru": "basvuru_formu"}
@@ -29,18 +29,18 @@ def sohbet_et(mesaj, gecmis):
     ayarlar = current_app.config
 
     if database.bugunku_token_toplami() >= ayarlar["AI_DAILY_TOKEN_BUDGET"]:
-        log.warning("Günlük token bütçesi doldu, Groq'a gidilmedi.")
+        log.warning("Günlük token bütçesi doldu, yapay zekâ servisine gidilmedi.")
         return {"cevap": BUTCE_DOLDU_YANITI, "yonlendirme": None}
 
     try:
-        sonuc = ai_service.yanit_uret(
-            mesaj, gecmis, bilgi_servisi.cekirdek(ayarlar), bilgi_servisi.bilgi(ayarlar)
-        )
+        sonuc = ai_service.yanit_uret(mesaj, gecmis, bilgi_servisi.belge(ayarlar))
     except AIServiceError as e:
-        _kullanim_kaydet(e.model, 0, 0, None, "kota" if e.durum_kodu == 429 else "hata")
+        _basarisizlari_kaydet(e.denemeler)
         raise
 
     if not sonuc.demo:
+        # Yedeğe düşüldüyse ana sağlayıcının neden başarısız olduğu da görünsün
+        _basarisizlari_kaydet(sonuc.basarisiz)
         _kullanim_kaydet(sonuc.model, sonuc.prompt_token, sonuc.cevap_token, sonuc.sure_ms, "basarili")
     cevap, yonlendirme = yonlendirmeyi_ayir(sonuc.cevap)
     return {"cevap": cevap, "yonlendirme": yonlendirme}
@@ -54,6 +54,11 @@ def yonlendirmeyi_ayir(cevap):
     etiketler = FORM_ETIKETI.findall(cevap)
     temiz = FORM_ETIKETI.sub("", cevap).strip()
     return temiz, (YONLENDIRME[etiketler[-1].lower()] if etiketler else None)
+
+
+def _basarisizlari_kaydet(denemeler):
+    for d in denemeler:
+        _kullanim_kaydet(d.model, 0, 0, None, "kota" if d.durum_kodu == 429 else "hata")
 
 
 def _kullanim_kaydet(model, prompt_token, cevap_token, sure_ms, durum):

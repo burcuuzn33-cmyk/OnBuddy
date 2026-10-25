@@ -17,6 +17,12 @@ def _origin_listesi(deger):
     return [o.strip() for o in deger.split(",") if o.strip()]
 
 
+def _liste(deger, varsayilan):
+    """'groq, gemini' metnini küçük harfli listeye çevirir; boşsa varsayılanı kullanır."""
+    ogeler = [o.strip().lower() for o in (deger or "").split(",") if o.strip()]
+    return ogeler or varsayilan
+
+
 def _sayi(ad, varsayilan, tip=int):
     """Ortam değişkenini sayıya çevirir; boş veya hatalıysa varsayılanı kullanır."""
     try:
@@ -31,23 +37,30 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-gizli-anahtar")
     DATABASE_URL = os.environ.get("DATABASE_URL", "onbuddy.db")
 
-    # Yapay zekâ: Groq. Ana model kota (429) verirse veya erişilemezse (404) bir kez yedek modelle denenir.
+    # Yapay zekâ: iki sağlayıcı sırayla denenir (AI_PROVIDER_ORDER). Ana sağlayıcıdan geçerli cevap
+    # alınamazsa (kota, zaman aşımı, sunucu hatası, boş cevap...) sıradakine geçilir. Anahtarı olmayan
+    # sağlayıcı atlanır; hiçbirinin anahtarı yoksa sistem demo modunda çalışır.
     # Not: Bu Groq hesabının Llama modellerine erişimi yok (model_not_found); gpt-oss modelleri kullanılır.
+    AI_PROVIDER_ORDER = _liste(os.environ.get("AI_PROVIDER_ORDER"), ["groq", "gemini"])
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
     GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
-    GROQ_FALLBACK_MODEL = os.environ.get("GROQ_FALLBACK_MODEL", "openai/gpt-oss-120b")
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+    GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
     # gpt-oss "düşünen" modeldir: düşünme kısa tutulur ve cevapta gönderilmez. Boşsa parametre gönderilmez.
     AI_REASONING_EFFORT = os.environ.get("AI_REASONING_EFFORT", "low").strip()
     AI_TEMPERATURE = _sayi("AI_TEMPERATURE", 0.3, float)
     # Düşünme token'ları da bu sınırdan yiyebileceği için cevap uzunluğundan geniş tutulur
     AI_MAX_TOKENS = _sayi("AI_MAX_TOKENS", 800)
-    AI_TIMEOUT = _sayi("AI_TIMEOUT", 15)            # saniye
+    # İstek başına zaman aşımı ve tüm sağlayıcılar için toplam süre (saniye). Toplam süre, gunicorn'un
+    # varsayılan 30 sn'lik sınırının altında kalmalı; yoksa çalışan öldürülür ve Wix JSON yerine HTML hata alır.
+    AI_TIMEOUT = _sayi("AI_TIMEOUT", 10)
+    AI_TOTAL_TIMEOUT = _sayi("AI_TOTAL_TIMEOUT", 25)
     AI_HISTORY_MAX_MESSAGES = _sayi("AI_HISTORY_MAX_MESSAGES", 6)
     AI_HISTORY_MAX_CHARS = _sayi("AI_HISTORY_MAX_CHARS", 2400)
     # Günlük toplam token sınırı; aşılırsa Groq'a gidilmez (kota birinin yüzünden bitmesin)
     AI_DAILY_TOKEN_BUDGET = _sayi("AI_DAILY_TOKEN_BUDGET", 300000)
 
-    # Bilgi klasörü: cekirdek.md (rol ve kurallar) + bilgi.md (tek bilgi belgesi, her soruda gönderilir)
+    # Bilgi klasörü: asistan.md (kurallar + bilgi tek belgede, her soruda gönderilir)
     KNOWLEDGE_DIR = os.environ.get("KNOWLEDGE_DIR", str(PROJE_KLASORU / "knowledge"))
 
     # Kötüye kullanım koruması: IP başına sohbet sınırı ve istek gövdesi boyutu
