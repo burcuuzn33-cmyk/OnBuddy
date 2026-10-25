@@ -11,33 +11,8 @@ Site Wix Studio'da hazırlandı; asıl iş burada, Python ile yazılmış küç�
 ## Mimari
 
 Sistem üç parçadan oluşur: Wix'te duran site, Render'da çalışan bu backend ve cevapları üreten
-Groq yapay zekâ servisi.
-
-```mermaid
-flowchart LR
-    Z([Ziyaretçi]) --> W
-
-    subgraph Wix["Wix Studio (ön yüz)"]
-        W[Web sitesi<br/>sohbet kutusu · iletişim formu · yönetim paneli]
-    end
-
-    subgraph Render["Render (bu depo)"]
-        F[Flask API]
-        K[knowledge/<br/>cekirdek.md · bilgi.md]
-        D[(SQLite<br/>leads · ai_kullanim)]
-        F --- K
-        F --- D
-    end
-
-    G[Groq<br/>gpt-oss-20b]
-
-    W -- "POST /api/sohbet" --> F
-    W -- "POST /api/leads" --> F
-    F -- "kurallar + bilgi + soru" --> G
-    G -- cevap --> F
-```
-
-Kısaca görev dağılımı:
+Groq yapay zekâ servisi. Ziyaretçi yalnızca Wix sitesini görür; site, arka planda backend'e istek atar,
+backend de gerekirse Groq'a sorar.
 
 | Parça | Ne yapar |
 |---|---|
@@ -45,24 +20,20 @@ Kısaca görev dağılımı:
 | **Flask backend** (bu depo) | İstekleri doğrular, yapay zekâya sorar, form kayıtlarını SQLite'a yazar. |
 | **Groq** | Soruyu alır, verdiğimiz kurallara ve bilgi belgesine bakarak Türkçe cevap yazar. |
 
+Backend'in kendi içinde bir bilgi klasörü ve bir veritabanı vardır: `knowledge/` klasörü asistanın
+kurallarını ve bilgisini, SQLite veritabanı ise form kayıtlarını (`leads`) ve token kullanımını
+(`ai_kullanim`) tutar.
+
 ### Bir sohbet mesajı nasıl ilerler?
 
-```mermaid
-sequenceDiagram
-    participant Z as Ziyaretçi
-    participant W as Wix sitesi
-    participant B as Flask backend
-    participant G as Groq
-
-    Z->>W: "Demo nasıl alabilirim?"
-    W->>B: POST /api/sohbet {mesaj, gecmis}
-    B->>B: Mesajı doğrula, IP sınırı ve günlük token bütçesini kontrol et
-    B->>G: cekirdek.md + bilgi.md + sohbet geçmişi + soru
-    G-->>B: Cevap (sonunda [FORM:demo] etiketi olabilir)
-    B->>B: Etiketi ayır, token kullanımını kaydet
-    B-->>W: {cevap, yonlendirme: "demo_formu"}
-    W-->>Z: Cevap ve (varsa) form butonu
-```
+1. Ziyaretçi sohbet kutusuna bir soru yazar (ör. "Demo nasıl alabilirim?").
+2. Wix sitesi, mesajı ve önceki konuşmayı `POST /api/sohbet` adresine gönderir.
+3. Backend mesajı doğrular (boş mu, çok uzun mu) ve IP başına istek sınırına ve günlük token bütçesine bakar.
+4. Backend, Groq'a şunları gönderir: `cekirdek.md` (kurallar), `bilgi.md` (bilgi), sohbet geçmişi ve yeni soru.
+5. Groq cevabı yazar. Cevap bir form önerecekse sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler.
+6. Backend bu etiketi cevaptan siler, token kullanımını veritabanına yazar ve Wix'e
+   `{cevap, yonlendirme}` döner.
+7. Wix cevabı sohbet kutusunda gösterir; `yonlendirme` doluysa ilgili form butonunu da çıkarır.
 
 Önemli nokta: asistan **sadece `knowledge/bilgi.md` dosyasındaki bilgiyle** cevap verir. Belgede olmayan
 bir şeyi (fiyat, entegrasyon, maaş vb.) uydurmaması için kurallar `knowledge/cekirdek.md` içinde yazılı.
