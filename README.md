@@ -1,112 +1,190 @@
-# OnBuddy — Yapay Zekâ Destekli İK Asistanı
+# OnBuddy
 
-Wix Studio sitemizdeki ziyaretçilerle yapay zekâ üzerinden Türkçe sohbet eden ve
-iletişim bilgisi bırakan adayları kaydeden Flask backend'i. İki arayüz vardır:
-karşılama sayfası (sohbet + form) ve adayların listelendiği yönetim paneli.
+OnBuddy, yeni işe başlayan çalışanların oryantasyonunu dijital rehberlik ve "buddy" (gölge arkadaş)
+eşleşmesiyle yöneten bir platformdur. Bu depo, platformun tanıtım sitesinin arkasındaki
+**backend**'i içerir: sitedeki sohbet asistanına cevap verir ve formdan gelen kayıtları saklar.
 
-**Teknolojiler:** Python · Flask · SQLite · Groq (openai/gpt-oss-20b) · Wix Velo · Render
+![OnBuddy web sitesi ve sohbet asistanı](docs/gorseller/web-ana-sayfa.png)
+
+Site Wix Studio'da hazırlandı; asıl iş burada, Python ile yazılmış küçük bir Flask uygulamasında dönüyor.
 
 ## Mimari
 
+Sistem üç parçadan oluşur: Wix'te duran site, Render'da çalışan bu backend ve cevapları üreten
+Groq yapay zekâ servisi.
+
+```mermaid
+flowchart LR
+    Z([Ziyaretçi]) --> W
+
+    subgraph Wix["Wix Studio (ön yüz)"]
+        W[Web sitesi<br/>sohbet kutusu · iletişim formu · yönetim paneli]
+    end
+
+    subgraph Render["Render (bu depo)"]
+        F[Flask API]
+        K[knowledge/<br/>cekirdek.md · bilgi.md]
+        D[(SQLite<br/>leads · ai_kullanim)]
+        F --- K
+        F --- D
+    end
+
+    G[Groq<br/>gpt-oss-20b]
+
+    W -- "POST /api/sohbet" --> F
+    W -- "POST /api/leads" --> F
+    F -- "kurallar + bilgi + soru" --> G
+    G -- cevap --> F
 ```
-run.py                  Giriş noktası (gunicorn run:app)
-config.py               Tüm ayarlar (.env'den okunur), geliştirme/üretim sınıfları
+
+Kısaca görev dağılımı:
+
+| Parça | Ne yapar |
+|---|---|
+| **Wix sitesi** | Ziyaretçinin gördüğü her şey. Sohbet kutusu, iletişim formu ve şifreli yönetim paneli burada. Backend'e `fetch` ile istek atar. |
+| **Flask backend** (bu depo) | İstekleri doğrular, yapay zekâya sorar, form kayıtlarını SQLite'a yazar. |
+| **Groq** | Soruyu alır, verdiğimiz kurallara ve bilgi belgesine bakarak Türkçe cevap yazar. |
+
+### Bir sohbet mesajı nasıl ilerler?
+
+```mermaid
+sequenceDiagram
+    participant Z as Ziyaretçi
+    participant W as Wix sitesi
+    participant B as Flask backend
+    participant G as Groq
+
+    Z->>W: "Demo nasıl alabilirim?"
+    W->>B: POST /api/sohbet {mesaj, gecmis}
+    B->>B: Mesajı doğrula, IP sınırı ve günlük token bütçesini kontrol et
+    B->>G: cekirdek.md + bilgi.md + sohbet geçmişi + soru
+    G-->>B: Cevap (sonunda [FORM:demo] etiketi olabilir)
+    B->>B: Etiketi ayır, token kullanımını kaydet
+    B-->>W: {cevap, yonlendirme: "demo_formu"}
+    W-->>Z: Cevap ve (varsa) form butonu
+```
+
+Önemli nokta: asistan **sadece `knowledge/bilgi.md` dosyasındaki bilgiyle** cevap verir. Belgede olmayan
+bir şeyi (fiyat, entegrasyon, maaş vb.) uydurmaması için kurallar `knowledge/cekirdek.md` içinde yazılı.
+
+## Klasör yapısı
+
+```
+run.py                  Uygulamanın giriş noktası (Render: gunicorn run:app)
+config.py               Tüm ayarlar; .env dosyasından okunur
 app/
-├── __init__.py         create_app(): ayarlar → CORS → init_db → bilgi dosyaları → blueprint'ler, /health
-├── database.py         SADECE SQL burada (leads, ai_kullanim)
-├── routes.py           Sadece yönlendirme ve doğrulama; SQL veya AI kodu içermez
+├── __init__.py         Uygulamayı kurar: ayarlar, CORS, veritabanı, bilgi dosyaları, rotalar
+├── routes.py           API adresleri; sadece gelen isteği doğrular ve ilgili yere yönlendirir
+├── database.py         Veritabanı sorgularının TAMAMI burada (başka yerde SQL yok)
 ├── services/
-│   ├── sohbet_service.py   Sohbet akışı: bütçe → Groq → kullanım kaydı → form yönlendirme etiketi
-│   ├── knowledge_service.py  cekirdek.md ve bilgi.md'yi okur (parçalama/arama yok)
-│   ├── ai_service.py       SADECE Groq çağrıları burada (yedek model, hata durumları)
-│   └── hiz_siniri.py       IP başına sohbet sınırı
-└── templates/          index.html (karşılama), dashboard.html (yönetim paneli)
-knowledge/              cekirdek.md (rol ve kurallar) + bilgi.md (tek bilgi belgesi)
-scripts/degerlendir.py  Gerçek Groq ile 25 soruluk değerlendirme
-tests/                  Pytest testleri (Groq taklit edilir)
-docs/                   Wix Velo sayfa kodları
+│   ├── sohbet_service.py     Sohbetin akışı: bütçe kontrolü → Groq → kayıt → form yönlendirmesi
+│   ├── ai_service.py         Groq ile konuşan tek dosya (yedek model, hata durumları)
+│   ├── knowledge_service.py  cekirdek.md ve bilgi.md dosyalarını okur
+│   └── hiz_siniri.py         IP başına istek sınırı
+└── templates/          Basit karşılama ve yönetim paneli sayfaları
+knowledge/
+├── cekirdek.md         Asistanın rolü, üslubu ve kuralları
+└── bilgi.md            Asistanın tek bilgi kaynağı (ürün, şirket, kariyer)
+scripts/                Gerçek Groq ile çalışan 24 soruluk elle test
+tests/                  Otomatik testler (Groq'a gitmez)
+docs/                   Görseller ve ilk Wix kod örnekleri
 ```
 
-## Yapay Zekâ
+Katmanların sınırı bilinçli çizildi: rotalar iş yapmaz, `ai_service.py` yalnızca Groq'u bilir,
+`database.py` yalnızca SQL'i bilir. Bir şeyi değiştirmek istediğinde nereye bakacağın belli olsun diye.
 
-Tek asistan iki tür ziyaretçiye cevap verir; rol seçimi yoktur, model soruyu sorandan anlar:
-ürün/şirket soruları → demo formu, iş/pozisyon/başvuru soruları → başvuru formu.
+## Yapay zekâ nasıl çalışıyor?
 
-1. Sistem mesajı = `knowledge/cekirdek.md` (rol ve kurallar) + **`knowledge/bilgi.md`'nin tamamı**
-   (`<bilgi>` etiketi içinde). Belge parçalanmaz ve aranmaz; her soruda eksiksiz gönderilir.
-   `<!-- ... -->` yorum satırları modele gönderilmez.
-2. Groq'a gönderilir (`openai/gpt-oss-20b`, temperature 0.3, `reasoning_effort: low`). Kota (429)
-   dolarsa veya model hesapta erişilemezse (404) bir kez `openai/gpt-oss-120b` ile denenir.
-   Boş veya yarım kalmış cevap gösterilmez. (Bu Groq hesabının Llama modellerine erişimi yoktur.)
-3. Form butonu: model, form önerirken cevabın sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler
-   (kural `cekirdek.md`'de). Backend etiketi cevaptan siler ve `yonlendirme` alanına çevirir;
-   etiket yoksa `yonlendirme` `null` olur.
-4. Token kullanımı `ai_kullanim` tablosuna yazılır (mesaj içeriği yazılmaz). Günlük bütçe
-   (`AI_DAILY_TOKEN_BUDGET`) dolunca Groq'a gidilmez.
+1. Sistem mesajı iki dosyadan kurulur: `cekirdek.md` (kurallar) ve `bilgi.md` (bilgi). `bilgi.md`
+   parçalanmaz ve aranmaz; **dosyanın tamamı her soruda** modele gönderilir.
+2. Model `openai/gpt-oss-20b`'dir. Kota dolarsa veya model bulunamazsa bir kez `openai/gpt-oss-120b` denenir.
+3. Cevap kısa ve düz metin olmalıdır. Model, form önermek istediğinde cevabın sonuna `[FORM:demo]` veya
+   `[FORM:basvuru]` yazar. Backend bu etiketi cevaptan siler ve Wix'in göstereceği buton için
+   `yonlendirme` alanına çevirir.
+4. Her çağrının token sayısı `ai_kullanim` tablosuna yazılır (mesaj içeriği yazılmaz). Günlük
+   bütçe dolarsa Groq'a hiç gidilmez.
 
-**Bilgiyi güncellemek:** `knowledge/bilgi.md` dosyasını düzenleyin. Dosya değişince bir sonraki soruda
-yeniden okunur; Render'da değişiklik deploy ile gelir. `bilgi.md` veya `cekirdek.md` yoksa ya da boşsa
-uygulama açılmaz (soruları sessizce cevapsız bırakmak yerine).
+**Bilgiyi güncellemek için** `knowledge/bilgi.md` dosyasını düzenlemek yeterli. Değişiklik canlıya GitHub
+üzerinden gider. Belge her soruda gönderildiği için uzunluğu token harcar; 15.000 karakteri aşarsa
+uygulama açılırken uyarı yazar. Dosyada `<!-- ... -->` içine yazdığın notlar modele gönderilmez.
 
-**Bilgi belgesinin boyutu:** Belgenin tamamı her soruda gönderildiği için uzunluğu doğrudan token
-tüketir (yaklaşık 3 karakter = 1 token). 15.000 karakteri aşarsa açılışta uyarı yazılır. Groq'un
-ücretsiz dakikalık token sınırı ve `AI_DAILY_TOKEN_BUDGET` bu yüzden daha çabuk dolar; belgeyi kısa,
-tekrarsız ve olgusal tutun.
+> `bilgi.md` içindeki kariyer bölümü ve açık pozisyon listesi şimdilik örnek (mock) veridir.
 
-> ⚠️ `bilgi.md` içindeki "Kariyer" bölümleri ve açık pozisyon listesi şimdilik **örnek (mock)** içeriktir.
-> Gerçek bilgiler gelince güncelleyin.
+## Mobil uygulama
+
+Platformun diğer yarısı, çalışanın kullandığı mobil uygulamadır. Bu depoda uygulamanın kodu yoktur;
+asistan ve site bu ekranları tanıtır. Başlıca ekranlar:
+
+![Mobil uygulama ekranları](docs/gorseller/mobil-ekranlar.png)
+
+| Giriş ekranı | Ana sayfa | E-posta kurulumu rehberi |
+|---|---|---|
+| ![Giriş](docs/gorseller/mobil-giris.png) | ![Ana sayfa](docs/gorseller/mobil-ana-sayfa.png) | ![E-posta kurulumu](docs/gorseller/mobil-eposta-kurulumu.png) |
+
+## API
+
+| Metot | Adres | Gönderilen | Dönen |
+|---|---|---|---|
+| POST | `/api/sohbet` | `mesaj` (en çok 1000 karakter), `gecmis` | `basari`, `cevap`, `yonlendirme` (`demo_formu`, `basvuru_formu` veya `null`) |
+| POST | `/api/leads` | `isim`, `telefon`, `eposta?`, `pozisyon?`, `mesaj?` | `basari`, `mesaj` |
+| GET | `/api/leads` | `X-Admin-Token` başlığı | `basari`, `toplam`, `leadler` |
+| GET | `/health` | | `durum: "aktif"` |
+
+Hata durumunda `{"basari": false, "hata": "..."}` döner: hatalı istek 400, çok büyük istek 413, çok
+fazla istek veya Groq kotası 429, yapay zekâ servisi hatası 503.
+
+Terminalden denemek için:
+
+```bash
+curl -s -X POST https://onbuddy-f3hp.onrender.com/api/sohbet \
+  -H "Content-Type: application/json" \
+  -d '{"mesaj": "Demo nasıl alabilirim?"}'
+```
+
+## Yerelde çalıştırma
+
+```bash
+python3 -m venv venv
+source venv/bin/activate                 # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env                     # sonra .env içine GROQ_API_KEY yaz
+python run.py
+```
+
+Uygulama http://localhost:5000 adresinde açılır. `GROQ_API_KEY` boşsa sistem demo modunda çalışır
+ve gerçek cevap vermez.
 
 ## Testler
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                 # Groq'a gitmez
-python -m scripts.degerlendir       # gerçek Groq ile; .env'de GROQ_API_KEY gerekir
+python -m pytest -q                 # otomatik testler, Groq'a gitmez
+python -m scripts.degerlendir       # 24 soruluk elle test, gerçek Groq ister
 ```
 
-## Kurulum
+## Güvenlik ve koruma
 
-```bash
-python -m venv venv
-venv\Scripts\activate        # macOS/Linux: source venv/bin/activate
-pip install -r requirements.txt
-copy .env.example .env       # macOS/Linux: cp .env.example .env  → GROQ_API_KEY'i doldurun
-python run.py
-```
-
-- Karşılama sayfası: http://localhost:5000/
-- Yönetim paneli: http://localhost:5000/dashboard
-- Sağlık kontrolü: http://localhost:5000/health
-
-## API
-
-| Metot | Yol | Gönderilen | Dönen |
-|---|---|---|---|
-| POST | `/api/sohbet` | `mesaj` (≤1000 karakter), `gecmis` | `basari`, `cevap`, `yonlendirme` (`demo_formu` / `basvuru_formu` / `null`) |
-| POST | `/api/leads` | `isim`, `telefon`, `eposta?`, `pozisyon?`, `mesaj?` | `basari`, `mesaj` (201) |
-| GET | `/api/leads` | — | `basari`, `toplam`, `leadler` |
-| GET | `/health` | — | `durum: "aktif"` |
-
-Hatalarda `{"basari": false, "hata": "..."}` döner: eksik/hatalı veri 400, istek çok büyük 413,
-çok fazla istek veya Groq kotası dolu 429 (`Retry-After` başlığıyla), yapay zekâ hatası 503.
-
-## Güvenlik
-
-- SQL sorgularında `?` yer tutucusu kullanılır (SQL Injection koruması).
-- API anahtarları `.env` içindedir ve `.gitignore` ile GitHub'dan uzak tutulur.
-- CORS: canlıda `CORS_ORIGINS` yalnızca Wix sitemizin adresine ayarlanır.
-
-## Wix Bağlantısı
-
-`docs/wix_karsilama.js` ve `docs/wix_panel.js` dosyalarını ilgili Wix sayfalarının
-Velo koduna yapıştırın, dosyadaki bileşen ID'lerini verin ve `API` adresini Render
-adresinizle değiştirin.
+- SQL sorgularında `?` yer tutucusu kullanılır (SQL injection'a karşı).
+- API anahtarları ve şifreler `.env` dosyasında durur; `.gitignore` bunu GitHub'a göndermez.
+- CORS ayarıyla yalnızca bizim Wix sitemizin API'ye istek atmasına izin verilir (`CORS_ORIGINS`).
+- `ADMIN_TOKEN` tanımlıysa aday listesi (`GET /api/leads`) o anahtar olmadan açılmaz; canlıda mutlaka tanımlanmalı. Wix'teki yönetim paneli de ayrıca şifreyle korunur.
+- Sohbet ve form için IP başına istek sınırı vardır; günlük toplam token bütçesi de sınırlıdır.
+- Mesaj içerikleri veritabanına yazılmaz, yalnızca token sayıları tutulur.
 
 ## Yayınlama (Render)
 
-- Build: `pip install -r requirements.txt`
-- Start: `gunicorn run:app`
-- Environment: `FLASK_ENV=production`, `GROQ_API_KEY`, `SECRET_KEY`, `CORS_ORIGINS`
-  (diğer ayarlar ve varsayılanları için `.env.example`)
-- ⚠️ Render'ın ücretsiz planında disk kalıcı değildir; `onbuddy.db` yeniden başlatmada silinir.
-  Kalıcı veri için ücretli planda persistent disk ekleyip `DATABASE_URL`'i o diske yönlendirin.
+- Build komutu: `pip install -r requirements.txt`
+- Başlatma komutu: `gunicorn run:app`
+- Ortam değişkenleri: `FLASK_ENV=production`, `GROQ_API_KEY`, `SECRET_KEY`, `CORS_ORIGINS`, `ADMIN_TOKEN`
+  (tüm ayarlar ve varsayılanları `.env.example` içinde)
+- `main` dalına birleşen her değişiklik Render'da otomatik yayınlanır.
+
+Render'ın ücretsiz planında disk kalıcı değildir; sunucu yeniden başladığında `onbuddy.db` silinir ve
+kayıtlı adaylar kaybolur. Kalıcı veri için ücretli planda kalıcı disk eklenip `DATABASE_URL` o diske
+yönlendirilmelidir.
+
+## Wix tarafı
+
+Sohbet kutusu, form ve yönetim paneli Wix Studio içinde, Velo koduyla çalışır ve bu backend'e istek atar.
+`docs/wix_karsilama.js` ve `docs/wix_panel.js` bu bağlantının ilk sürüm örnekleridir; sitenin güncel
+kodu Wix editöründedir.
