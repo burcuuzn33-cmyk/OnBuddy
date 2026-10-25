@@ -3,6 +3,7 @@
 Burada SQL veya yapay zekâ kodu YOKTUR; sadece database.py ve services/ fonksiyonları çağrılır.
 """
 import hmac
+import re
 from functools import wraps
 from flask import Blueprint, request, jsonify, render_template, current_app
 from app.services.ai_service import AIServiceError
@@ -37,6 +38,25 @@ def yonetici_gerekli(fonksiyon):
                 return jsonify({"basari": False, "hata": "Yetkisiz erişim."}), 401
         return fonksiyon(*args, **kwargs)
     return sarmalayici
+
+
+LEAD_ALAN_SINIRLARI = {"isim": 100, "telefon": 30, "eposta": 254, "pozisyon": 100, "mesaj": 2000}
+EPOSTA_DESENI = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+TELEFON_DESENI = re.compile(r"^\+?[\d\s()\-]+$")
+
+
+def _lead_dogrula(veri, isim, telefon):
+    """Form alanlarını kontrol eder; sorun varsa kullanıcıya gösterilecek mesajı döndürür."""
+    for alan, sinir in LEAD_ALAN_SINIRLARI.items():
+        if len(_metin(veri, alan)) > sinir:
+            return f"{alan} alanı en fazla {sinir} karakter olabilir."
+    rakam_sayisi = sum(c.isdigit() for c in telefon)
+    if not TELEFON_DESENI.match(telefon) or not 10 <= rakam_sayisi <= 15:
+        return "Lütfen geçerli bir telefon numarası girin."
+    eposta = _metin(veri, "eposta")
+    if eposta and not EPOSTA_DESENI.match(eposta):
+        return "Lütfen geçerli bir e-posta adresi girin."
+    return None
 
 
 def _hata(mesaj, kod, bekleme=None):
@@ -94,11 +114,19 @@ def sohbet():
 @api.route("/leads", methods=["POST"])
 def lead_kaydet():
     """Gönderilen: {isim, telefon, mesaj?, eposta?, pozisyon?}  →  Dönen: {basari, mesaj}"""
+    # IP başına sınır: form sahte kayıtlarla doldurulamasın
+    bekleme = current_app.extensions["lead_hiz_siniri"].izin_ver(request.remote_addr or "bilinmiyor")
+    if bekleme:
+        return _hata("Çok fazla form gönderdiniz, lütfen daha sonra tekrar deneyin.", 429, bekleme)
+
     veri = _json_govde()
     isim = _metin(veri, "isim")
     telefon = _metin(veri, "telefon")
     if not isim or not telefon:
         return jsonify({"basari": False, "hata": "İsim ve telefon zorunludur."}), 400
+    hata = _lead_dogrula(veri, isim, telefon)
+    if hata:
+        return _hata(hata, 400)
 
     try:
         lead_ekle(isim, telefon, _metin(veri, "mesaj"), _metin(veri, "eposta"), _metin(veri, "pozisyon"))

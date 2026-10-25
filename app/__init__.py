@@ -44,6 +44,9 @@ def create_app(config_adi=None, ayarlar=None):
     app.extensions["sohbet_hiz_siniri"] = HizSiniri(
         app.config["CHAT_RATE_LIMIT_REQUESTS"], app.config["CHAT_RATE_LIMIT_WINDOW_SECONDS"]
     )
+    app.extensions["lead_hiz_siniri"] = HizSiniri(
+        app.config["LEAD_RATE_LIMIT_REQUESTS"], app.config["LEAD_RATE_LIMIT_WINDOW_SECONDS"]
+    )
 
     # 5) Rotaları kaydet; API rotaları /api önekini alır
     from app.routes import api, sayfalar
