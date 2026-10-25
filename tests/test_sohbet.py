@@ -65,6 +65,7 @@ def test_kota_hatasi_429_doner_ve_kaydedilir(app, client, groq):
 
 def test_groq_dusunce_gemini_cevap_verir_ve_ikisi_de_kaydedilir(app, client, groq, monkeypatch):
     monkeypatch.setattr(Config, "GEMINI_API_KEY", "gemini-test-anahtari")
+    monkeypatch.setattr(Config, "AI_PROVIDER_ORDER", ["groq", "gemini"])
     groq.yanitlar += [SahteYanit(429, {}), groq_cevabi("Demo için formu doldurun.\n[FORM:demo]", prompt=800, cevap=30)]
     r = client.post("/api/sohbet", json={"mesaj": "demo"})
     assert r.get_json() == {"basari": True, "cevap": "Demo için formu doldurun.", "yonlendirme": "demo_formu"}
@@ -76,6 +77,7 @@ def test_groq_dusunce_gemini_cevap_verir_ve_ikisi_de_kaydedilir(app, client, gro
 
 def test_iki_saglayici_da_dusunce_ikisi_de_kaydedilir(app, client, groq, monkeypatch):
     monkeypatch.setattr(Config, "GEMINI_API_KEY", "gemini-test-anahtari")
+    monkeypatch.setattr(Config, "AI_PROVIDER_ORDER", ["groq", "gemini"])
     groq.yanitlar += [SahteYanit(500, {}), SahteYanit(429, {})]
     r = client.post("/api/sohbet", json={"mesaj": "demo"})
     assert r.status_code == 503 and r.get_json()["basari"] is False

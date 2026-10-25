@@ -59,8 +59,9 @@ def test_reasoning_ayari_bossa_parametre_gonderilmez(groq, monkeypatch):
 
 @pytest.fixture
 def gemini(groq, monkeypatch):
-    """Groq'a ek olarak Gemini'yi de açar (yedek sağlayıcı)."""
+    """İki sağlayıcıyı da açar; sıra Groq, sonra Gemini (varsayılan sıradan bağımsız, testler buna göre yazıldı)."""
     monkeypatch.setattr(Config, "GEMINI_API_KEY", "gemini-test-anahtari")
+    monkeypatch.setattr(Config, "AI_PROVIDER_ORDER", ["groq", "gemini"])
     return groq
 
 
@@ -100,7 +101,7 @@ def test_gemini_anahtari_yoksa_yedege_gidilmez(groq):
     assert hata.value.durum_kodu == 429 and len(groq.istekler) == 1
 
 
-def test_sira_degistirilince_gemini_ilk_denenir(gemini, monkeypatch):
+def test_sira_degistirilince_gemini_ilk_denenir(gemini, monkeypatch):  # Gemini'nin ana, Groq'un yedek olduğu üretim sırası
     monkeypatch.setattr(Config, "AI_PROVIDER_ORDER", ["gemini", "groq"])
     gemini.yanitlar.append(groq_cevabi("geminiden"))
     sonuc = ai_service.yanit_uret("selam", [], BELGE)

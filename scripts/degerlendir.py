@@ -1,7 +1,7 @@
 """Gerçek yapay zekâ ile 25 soruluk değerlendirme. Elle çalıştırılır, cevaplar gözle kontrol edilir.
 
 Kullanım (proje klasöründen, .env'de ilgili API anahtarı dolu olmalı):
-    python -m scripts.degerlendir                      # AI_PROVIDER_ORDER sırasıyla (Groq, olmazsa Gemini)
+    python -m scripts.degerlendir                      # AI_PROVIDER_ORDER sırasıyla (Gemini, olmazsa Groq)
     python -m scripts.degerlendir --saglayici gemini   # yalnızca Gemini'yi dener (yedek davranışını ölçmek için)
     python -m scripts.degerlendir --saglayici groq
 
