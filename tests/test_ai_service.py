@@ -46,7 +46,7 @@ def test_basarili_cevap_ve_parametreler(groq):
     assert sonuc.cevap == "Merhaba!"
     assert (sonuc.model, sonuc.prompt_token, sonuc.cevap_token) == ("openai/gpt-oss-20b", 120, 8)
     istek = groq.istekler[0]
-    assert istek["temperature"] == 0.3 and istek["max_completion_tokens"] == 800
+    assert istek["temperature"] == 0.3 and istek["max_completion_tokens"] == Config.AI_MAX_TOKENS
     assert istek["reasoning_effort"] == "low" and istek["include_reasoning"] is False
 
 

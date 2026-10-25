@@ -31,7 +31,7 @@ def test_bilgi_belgesi_her_soruda_eksiksiz_gonderilir(client, groq):
         sistem = istek["messages"][0]["content"]
         # Soru ne olursa olsun belgenin farklı bölümleri aynı mesajda bulunur
         assert "<bilgi>" in sistem and "Akıllı buddy eşleşmesi" in sistem
-        assert "Kıdemli Backend Geliştirici" in sistem and "info@onbuddy.com" in sistem
+        assert "Kurumsal demo ve deneme" in sistem and "info@onbuddy.com" in sistem
         # Yorum satırları (düzenleyici notları) modele gitmez
         assert "<!--" not in sistem and "MOCK" not in sistem
 
