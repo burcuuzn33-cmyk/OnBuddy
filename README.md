@@ -11,14 +11,14 @@ Site Wix Studio'da hazırlandı; asıl iş burada, Python ile yazılmış küç�
 ## Mimari
 
 Sistem üç parçadan oluşur: Wix'te duran site, Render'da çalışan bu backend ve cevapları üreten
-yapay zekâ servisi (Groq, yedek olarak Gemini). Ziyaretçi yalnızca Wix sitesini görür; site, arka planda backend'e istek atar,
-backend de gerekirse yapay zekâ servisine (önce Groq, olmazsa Gemini) sorar.
+yapay zekâ servisi (Gemini, yedek olarak Groq). Ziyaretçi yalnızca Wix sitesini görür; site, arka planda backend'e istek atar,
+backend de gerekirse yapay zekâ servisine (önce Gemini, olmazsa Groq) sorar.
 
 | Parça | Ne yapar |
 |---|---|
 | **Wix sitesi** | Ziyaretçinin gördüğü her şey. Sohbet kutusu, iletişim formu ve şifreli yönetim paneli burada. Backend'e `fetch` ile istek atar. |
 | **Flask backend** (bu depo) | İstekleri doğrular, yapay zekâya sorar, form kayıtlarını SQLite'a yazar. |
-| **Groq** (ana) ve **Gemini** (yedek) | Soruyu alır, verdiğimiz kurallara ve bilgi belgesine bakarak Türkçe cevap yazar. Groq'tan cevap alınamazsa Gemini yazar. |
+| **Gemini** (ana) ve **Groq** (yedek) | Soruyu alır, verdiğimiz kurallara ve bilgi belgesine bakarak Türkçe cevap yazar. Gemini'den cevap alınamazsa Groq yazar. |
 
 Backend'in kendi içinde bir bilgi klasörü ve bir veritabanı vardır: `knowledge/` klasörü asistanın
 kurallarını ve bilgisini, SQLite veritabanı ise form kayıtlarını (`leads`) ve token kullanımını
@@ -29,8 +29,8 @@ kurallarını ve bilgisini, SQLite veritabanı ise form kayıtlarını (`leads`)
 1. Ziyaretçi sohbet kutusuna bir soru yazar (ör. "Demo nasıl alabilirim?").
 2. Wix sitesi, mesajı ve önceki konuşmayı `POST /api/sohbet` adresine gönderir.
 3. Backend mesajı doğrular (boş mu, çok uzun mu) ve IP başına istek sınırına ve günlük token bütçesine bakar.
-4. Backend, yapay zekâya (önce Groq) şunları gönderir: `asistan.md` (kurallar ve bilgi), sohbet geçmişi ve yeni soru.
-5. Model cevabı yazar. Groq'tan geçerli cevap gelmezse aynı istek Gemini'ye gider. Cevap bir form önerecekse sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler.
+4. Backend, yapay zekâya (önce Gemini) şunları gönderir: `asistan.md` (kurallar ve bilgi), sohbet geçmişi ve yeni soru.
+5. Model cevabı yazar. Gemini'den geçerli cevap gelmezse aynı istek Groq'a gider. Cevap bir form önerecekse sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler.
 6. Backend bu etiketi cevaptan siler, token kullanımını veritabanına yazar ve Wix'e
    `{cevap, yonlendirme}` döner.
 7. Wix cevabı sohbet kutusunda gösterir; `yonlendirme` doluysa ilgili form butonunu da çıkarır.
@@ -67,11 +67,11 @@ Katmanların sınırı bilinçli çizildi: rotalar iş yapmaz, `ai_service.py` y
 
 1. Sistem mesajı tek dosyadır: `asistan.md`. Başında kurallar ve üslup, sonunda `<bilgi>` etiketleri arasında
    bilgi vardır. Dosya parçalanmaz ve aranmaz; **tamamı her soruda** modele gönderilir.
-2. Ana model Groq'taki `openai/gpt-oss-20b`'dir. Groq'tan geçerli cevap alınamazsa (kota, zaman aşımı, sunucu
-   hatası, geçersiz anahtar, boş veya yarım cevap) aynı istek yedek olan Gemini'ye (`gemini-3.5-flash-lite`) gider.
-   Sıra `AI_PROVIDER_ORDER` ile değişir; anahtarı olmayan sağlayıcı atlanır. Tüm denemeler `AI_TOTAL_TIMEOUT`
-   (25 sn) içinde biter. Başarısız her deneme de `ai_kullanim` tablosuna yazılır, böylece Groq'un ne sıklıkla
-   düştüğü görülür. Not: mesajlar yedek durumda Google'a da gider.
+2. Ana model Gemini'deki `gemini-3.5-flash-lite`'dır. Gemini'den geçerli cevap alınamazsa (kota, zaman aşımı,
+   sunucu hatası, geçersiz anahtar, boş veya yarım cevap) aynı istek yedek olan Groq'a (`openai/gpt-oss-20b`) gider.
+   Sıra `AI_PROVIDER_ORDER` ile değişir (varsayılan `gemini,groq`); anahtarı olmayan sağlayıcı atlanır. Tüm denemeler `AI_TOTAL_TIMEOUT`
+   (25 sn) içinde biter. Başarısız her deneme de `ai_kullanim` tablosuna yazılır, böylece Gemini'nin ne sıklıkla
+   düştüğü görülür. Not: mesajlar artık önce Google'a gider.
 3. Cevap kısa ve düz metin olmalıdır. Model, form önermek istediğinde cevabın sonuna `[FORM:demo]` veya
    `[FORM:basvuru]` yazar. Backend bu etiketi cevaptan siler ve Wix'in göstereceği buton için
    `yonlendirme` alanına çevirir.

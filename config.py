@@ -8,6 +8,10 @@ load_dotenv()
 
 PROJE_KLASORU = Path(__file__).resolve().parent
 
+# Ana sağlayıcı Gemini, yedek Groq. (Groq bu hesapta dakikada yalnızca 8.000 token verdiği için,
+# istek başına yaklaşık 3.000 token harcayan bu asistanda dakikada 2-3 isteğe yetiyor.)
+VARSAYILAN_SAGLAYICI_SIRASI = ["gemini", "groq"]
+
 
 def _origin_listesi(deger):
     """CORS için 'https://a.com, https://b.com' metnini listeye çevirir. '*' herkese izin verir."""
@@ -37,11 +41,11 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "gelistirme-icin-gizli-anahtar")
     DATABASE_URL = os.environ.get("DATABASE_URL", "onbuddy.db")
 
-    # Yapay zekâ: iki sağlayıcı sırayla denenir (AI_PROVIDER_ORDER). Ana sağlayıcıdan geçerli cevap
+    # Yapay zekâ: iki sağlayıcı sırayla denenir (AI_PROVIDER_ORDER; varsayılan: Gemini, olmazsa Groq). Ana sağlayıcıdan geçerli cevap
     # alınamazsa (kota, zaman aşımı, sunucu hatası, boş cevap...) sıradakine geçilir. Anahtarı olmayan
     # sağlayıcı atlanır; hiçbirinin anahtarı yoksa sistem demo modunda çalışır.
     # Not: Bu Groq hesabının Llama modellerine erişimi yok (model_not_found); gpt-oss modelleri kullanılır.
-    AI_PROVIDER_ORDER = _liste(os.environ.get("AI_PROVIDER_ORDER"), ["groq", "gemini"])
+    AI_PROVIDER_ORDER = _liste(os.environ.get("AI_PROVIDER_ORDER"), VARSAYILAN_SAGLAYICI_SIRASI)
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
     GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")

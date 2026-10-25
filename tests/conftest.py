@@ -1,4 +1,9 @@
+import dotenv
 import pytest
+
+# Testler geliştiricinin .env dosyasından etkilenmez (ADMIN_TOKEN, hız sınırları, modeller...).
+# config.py içe aktarılmadan önce çalışmalı; conftest.py bundan önce yüklenir.
+dotenv.load_dotenv = lambda *args, **kwargs: False
 
 from app import create_app
 from config import Config

@@ -1,4 +1,4 @@
-"""Sohbet akışı: günlük bütçe → yapay zekâ (Groq, olmazsa Gemini) → kullanım kaydı → yönlendirme.
+"""Sohbet akışı: günlük bütçe → yapay zekâ (Gemini, olmazsa Groq) → kullanım kaydı → yönlendirme.
 
 Rotalar sadece bu fonksiyonu çağırır; yapay zekâ ve veritabanı adımlarını burası birleştirir.
 """
