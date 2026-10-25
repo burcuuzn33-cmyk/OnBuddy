@@ -53,8 +53,9 @@ class Config:
     # gpt-oss "düşünen" modeldir: düşünme kısa tutulur ve cevapta gönderilmez. Boşsa parametre gönderilmez.
     AI_REASONING_EFFORT = os.environ.get("AI_REASONING_EFFORT", "low").strip()
     AI_TEMPERATURE = _sayi("AI_TEMPERATURE", 0.3, float)
-    # Düşünme token'ları da bu sınırdan yiyebileceği için cevap uzunluğundan geniş tutulur
-    AI_MAX_TOKENS = _sayi("AI_MAX_TOKENS", 800)
+    # Düşünme token'ları da bu sınırdan yer (Gemini'de görünmez, usage'a yazılmaz bile): sınır dar olursa kısa bir
+    # cevap bile finish_reason=length ile 'yarım' sayılır. 250 kelimelik cevap yaklaşık 600 token tutar.
+    AI_MAX_TOKENS = _sayi("AI_MAX_TOKENS", 2000)
     # İstek başına zaman aşımı ve tüm sağlayıcılar için toplam süre (saniye). Toplam süre, gunicorn'un
     # varsayılan 30 sn'lik sınırının altında kalmalı; yoksa çalışan öldürülür ve Wix JSON yerine HTML hata alır.
     AI_TIMEOUT = _sayi("AI_TIMEOUT", 10)

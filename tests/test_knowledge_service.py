@@ -27,9 +27,11 @@ def test_belge_tek_parca_ve_eksiksiz_okunur(tmp_path):
 def test_gercek_asistan_dosyasi_yuklenir(app):
     belge = BilgiServisi().belge(app.config)
     # Kurallar ve bilgi aynı belgede; bilgi <bilgi> etiketleri arasında
-    assert "[FORM:demo]" in belge and "Kesin kurallar" in belge
+    assert "[FORM:demo]" in belge and "insan kaynakları uzmanı" in belge and "250 kelime" in belge
     assert belge.index("<bilgi>") < belge.index("OnBuddy nedir?") < belge.index("</bilgi>")
     assert "Fiyatlandırma" in belge
+    # Açık pozisyon / başvuru mantığı kaldırıldı: ilan listesi bilgi belgesinde yok
+    assert "Kıdemli Backend" not in belge and "[FORM:basvuru] etiketini hiç yazma" in belge
     assert "<!--" not in belge
     assert len(belge) < BILGI_UYARI_KARAKTER
 

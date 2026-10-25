@@ -54,8 +54,8 @@ app/
 │   └── hiz_siniri.py         IP başına istek sınırı
 └── templates/          Basit karşılama ve yönetim paneli sayfaları
 knowledge/
-└── asistan.md          Asistanın tek belgesi: rolü, üslubu, kuralları ve bilgisi (ürün, şirket, kariyer)
-scripts/                Gerçek yapay zekâ ile çalışan 24 soruluk elle test
+└── asistan.md          Asistanın tek belgesi: kimliği (İK uzmanı asistan), üslubu, kuralları ve bilgisi (ürün, şirket)
+scripts/                Gerçek yapay zekâ ile çalışan 22 soruluk elle test
 tests/                  Otomatik testler (yapay zekâya gitmez)
 docs/                   Görseller ve ilk Wix kod örnekleri
 ```
@@ -82,7 +82,8 @@ Katmanların sınırı bilinçli çizildi: rotalar iş yapmaz, `ai_service.py` y
 üzerinden gider. Belge her soruda gönderildiği için uzunluğu token harcar; 15.000 karakteri aşarsa
 uygulama açılırken uyarı yazar. Dosyada `<!-- ... -->` içine yazdığın notlar modele gönderilmez.
 
-> `asistan.md` içindeki kariyer bölümü ve açık pozisyon listesi şimdilik örnek (mock) veridir.
+> Asistan artık açık pozisyon ve iş başvurusu konuşmaz; bu sorularda info@onbuddy.com adresine yönlendirir.
+> Cevaplar en fazla 250 kelimedir (`AI_MAX_TOKENS=2000`), tek kalıba bağlı değildir.
 
 ## Mobil uygulama
 
@@ -133,7 +134,7 @@ ve gerçek cevap vermez.
 ```bash
 pip install -r requirements-dev.txt
 python -m pytest -q                 # otomatik testler, yapay zekâya gitmez
-python -m scripts.degerlendir       # 24 soruluk elle test, gerçek API anahtarı ister
+python -m scripts.degerlendir       # 22 soruluk elle test, gerçek API anahtarı ister
 python -m scripts.degerlendir --saglayici gemini   # yedeği tek başına ölçmek için
 ```
 
