@@ -4,7 +4,7 @@ Wix Studio sitemizdeki ziyaretçilerle yapay zekâ üzerinden Türkçe sohbet ed
 iletişim bilgisi bırakan adayları kaydeden Flask backend'i. İki arayüz vardır:
 karşılama sayfası (sohbet + form) ve adayların listelendiği yönetim paneli.
 
-**Teknolojiler:** Python · Flask · SQLite (FTS5) · Groq (openai/gpt-oss-20b) · Wix Velo · Render
+**Teknolojiler:** Python · Flask · SQLite · Groq (openai/gpt-oss-20b) · Wix Velo · Render
 
 ## Mimari
 
@@ -12,43 +12,49 @@ karşılama sayfası (sohbet + form) ve adayların listelendiği yönetim paneli
 run.py                  Giriş noktası (gunicorn run:app)
 config.py               Tüm ayarlar (.env'den okunur), geliştirme/üretim sınıfları
 app/
-├── __init__.py         create_app(): ayarlar → CORS → init_db → bilgi indeksi → blueprint'ler, /health
-├── database.py         SADECE SQL burada (leads, pozisyonlar, bilgi_parcalari, ai_kullanim)
+├── __init__.py         create_app(): ayarlar → CORS → init_db → bilgi dosyaları → blueprint'ler, /health
+├── database.py         SADECE SQL burada (leads, ai_kullanim)
 ├── routes.py           Sadece yönlendirme ve doğrulama; SQL veya AI kodu içermez
 ├── services/
-│   ├── sohbet_service.py   Sohbet akışı: bütçe → bilgi araması → Groq → kullanım kaydı → yönlendirme
-│   ├── knowledge_service.py  Dokümanları parçalar, SQLite FTS5'e indeksler, soruya uygun parçaları bulur
+│   ├── sohbet_service.py   Sohbet akışı: bütçe → Groq → kullanım kaydı → form yönlendirme etiketi
+│   ├── knowledge_service.py  cekirdek.md ve bilgi.md'yi okur (parçalama/arama yok)
 │   ├── ai_service.py       SADECE Groq çağrıları burada (yedek model, hata durumları)
 │   └── hiz_siniri.py       IP başına sohbet sınırı
 └── templates/          index.html (karşılama), dashboard.html (yönetim paneli)
-knowledge/              Yapay zekânın bilgi kaynağı (cekirdek.md = sistem mesajı)
+knowledge/              cekirdek.md (rol ve kurallar) + bilgi.md (tek bilgi belgesi)
 scripts/degerlendir.py  Gerçek Groq ile 25 soruluk değerlendirme
 tests/                  Pytest testleri (Groq taklit edilir)
 docs/                   Wix Velo sayfa kodları
 ```
 
-## Yapay Zekâ (RAG)
+## Yapay Zekâ
 
 Tek asistan iki tür ziyaretçiye cevap verir; rol seçimi yoktur, model soruyu sorandan anlar:
 ürün/şirket soruları → demo formu, iş/pozisyon/başvuru soruları → başvuru formu.
 
-1. Soru ve önceki kullanıcı mesajı, SQLite FTS5 ile `bilgi_parcalari` tablosunda aranır
-   (Türkçe ekler için kelimenin ilk 5 harfiyle önek araması). En alakalı 4 parça alınır.
-2. Sistem mesajı = `knowledge/cekirdek.md` + bulunan parçalar (`<bilgi>` etiketleri içinde).
-   Parça bulunamazsa model bilmediğini söyler.
-3. Groq'a gönderilir (`openai/gpt-oss-20b`, temperature 0.3, `reasoning_effort: low`). Kota (429)
+1. Sistem mesajı = `knowledge/cekirdek.md` (rol ve kurallar) + **`knowledge/bilgi.md`'nin tamamı**
+   (`<bilgi>` etiketi içinde). Belge parçalanmaz ve aranmaz; her soruda eksiksiz gönderilir.
+   `<!-- ... -->` yorum satırları modele gönderilmez.
+2. Groq'a gönderilir (`openai/gpt-oss-20b`, temperature 0.3, `reasoning_effort: low`). Kota (429)
    dolarsa veya model hesapta erişilemezse (404) bir kez `openai/gpt-oss-120b` ile denenir.
    Boş veya yarım kalmış cevap gösterilmez. (Bu Groq hesabının Llama modellerine erişimi yoktur.)
+3. Form butonu: model, form önerirken cevabın sonuna `[FORM:demo]` veya `[FORM:basvuru]` ekler
+   (kural `cekirdek.md`'de). Backend etiketi cevaptan siler ve `yonlendirme` alanına çevirir;
+   etiket yoksa `yonlendirme` `null` olur.
 4. Token kullanımı `ai_kullanim` tablosuna yazılır (mesaj içeriği yazılmaz). Günlük bütçe
    (`AI_DAILY_TOKEN_BUDGET`) dolunca Groq'a gidilmez.
 
-**Bilgi kaynağını güncellemek:** `knowledge/` altındaki `.md` dosyalarını düzenleyin; uygulama açılırken
-değişen dosyalar otomatik yeniden indekslenir. Her `## ` başlığı bir arama parçasıdır.
-Açık pozisyonlar `pozisyonlar` tablosundan gelir; pozisyon değiştikten sonra
-`bilgi_servisi.pozisyonlari_indeksle()` çağrılmalıdır.
+**Bilgiyi güncellemek:** `knowledge/bilgi.md` dosyasını düzenleyin. Dosya değişince bir sonraki soruda
+yeniden okunur; Render'da değişiklik deploy ile gelir. `bilgi.md` veya `cekirdek.md` yoksa ya da boşsa
+uygulama açılmaz (soruları sessizce cevapsız bırakmak yerine).
 
-> ⚠️ `knowledge/kariyer.md` ve `knowledge/ornek_pozisyonlar.json` şimdilik **örnek (mock)** içeriktir.
-> Gerçek bilgiler gelince güncelleyin ve `ORNEK_POZISYONLARI_YUKLE=0` yapın.
+**Bilgi belgesinin boyutu:** Belgenin tamamı her soruda gönderildiği için uzunluğu doğrudan token
+tüketir (yaklaşık 3 karakter = 1 token). 15.000 karakteri aşarsa açılışta uyarı yazılır. Groq'un
+ücretsiz dakikalık token sınırı ve `AI_DAILY_TOKEN_BUDGET` bu yüzden daha çabuk dolar; belgeyi kısa,
+tekrarsız ve olgusal tutun.
+
+> ⚠️ `bilgi.md` içindeki "Kariyer" bölümleri ve açık pozisyon listesi şimdilik **örnek (mock)** içeriktir.
+> Gerçek bilgiler gelince güncelleyin.
 
 ## Testler
 
