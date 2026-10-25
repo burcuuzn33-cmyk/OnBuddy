@@ -1,7 +1,7 @@
 """Yapay zekâ servis katmanı: tüm Groq API çağrıları yalnızca bu dosyada bulunur.
 
 Bu dosya Flask, HTTP rotaları veya veritabanı hakkında hiçbir şey bilmez;
-sistem mesajını, geçmişi ve bilgi parçalarını alır, Groq'a sorar ve sonucu döndürür.
+sistem mesajını, geçmişi ve bilgi belgesini alır, Groq'a sorar ve sonucu döndürür.
 """
 import logging
 import time
@@ -16,10 +16,6 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 DEMO_YANITI = (
     "Sistem demo modunda çalışıyor: API anahtarı tanımlı değil. Lütfen .env dosyanızı kontrol edin."
-)
-BILGI_YOK_NOTU = (
-    "<bilgi_yok>Bu soru için bilgi dokümanında ilgili bir bölüm bulunamadı. Selamlaşma veya "
-    "\"sen kimsin\" gibi bir soru değilse bilmediğini söyle ve uygun formu öner.</bilgi_yok>"
 )
 
 
@@ -48,13 +44,13 @@ class YanitSonucu:
 
 
 class AIService:
-    def yanit_uret(self, mesaj, gecmis, cekirdek, parcalar):
+    def yanit_uret(self, mesaj, gecmis, cekirdek, bilgi):
         """Sistem mesajını kurar, Groq'a sorar. Ana model kota verir veya erişilemezse bir kez yedek modelle dener."""
         if not Config.GROQ_API_KEY:
             log.warning("GROQ_API_KEY yok, demo modunda yanıt veriliyor.")
             return YanitSonucu(cevap=DEMO_YANITI, model="demo", demo=True)
 
-        mesajlar = self.mesajlari_olustur(mesaj, gecmis, cekirdek, parcalar)
+        mesajlar = self.mesajlari_olustur(mesaj, gecmis, cekirdek, bilgi)
         try:
             return self._groq_cagir(Config.GROQ_MODEL, mesajlar)
         except AIServiceError as e:
@@ -66,16 +62,9 @@ class AIService:
                 return self._groq_cagir(yedek, mesajlar)
             raise
 
-    def mesajlari_olustur(self, mesaj, gecmis, cekirdek, parcalar):
-        """Sıra önemli: sistem mesajı (çekirdek + bilgi), sonra geçmiş, en sonda yeni kullanıcı mesajı."""
-        if parcalar:
-            bilgi = "\n\n".join(
-                f'<bilgi kategori="{p["kategori"]}" baslik="{p["baslik"]}">\n{p["icerik"]}\n</bilgi>'
-                for p in parcalar
-            )
-        else:
-            bilgi = BILGI_YOK_NOTU
-        mesajlar = [{"role": "system", "content": f"{cekirdek}\n\n{bilgi}"}]
+    def mesajlari_olustur(self, mesaj, gecmis, cekirdek, bilgi):
+        """Sıra önemli: sistem mesajı (çekirdek + bilgi belgesi), sonra geçmiş, en sonda yeni kullanıcı mesajı."""
+        mesajlar = [{"role": "system", "content": f"{cekirdek}\n\n<bilgi>\n{bilgi}\n</bilgi>"}]
         mesajlar += self.gecmisi_temizle(gecmis)
         mesajlar.append({"role": "user", "content": mesaj})
         return mesajlar

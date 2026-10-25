@@ -47,12 +47,8 @@ class Config:
     # Günlük toplam token sınırı; aşılırsa Groq'a gidilmez (kota birinin yüzünden bitmesin)
     AI_DAILY_TOKEN_BUDGET = _sayi("AI_DAILY_TOKEN_BUDGET", 300000)
 
-    # RAG: bilgi dokümanları ve SQLite FTS5 araması
+    # Bilgi klasörü: cekirdek.md (rol ve kurallar) + bilgi.md (tek bilgi belgesi, her soruda gönderilir)
     KNOWLEDGE_DIR = os.environ.get("KNOWLEDGE_DIR", str(PROJE_KLASORU / "knowledge"))
-    RAG_TOP_K = _sayi("RAG_TOP_K", 4)
-    RAG_MAX_CHUNK_CHARS = _sayi("RAG_MAX_CHUNK_CHARS", 800)
-    # Pozisyon tablosu boşsa knowledge/ornek_pozisyonlar.json ile doldurulur (şimdilik mock veri)
-    ORNEK_POZISYONLARI_YUKLE = os.environ.get("ORNEK_POZISYONLARI_YUKLE", "1") == "1"
 
     # Kötüye kullanım koruması: IP başına sohbet sınırı ve istek gövdesi boyutu
     CHAT_RATE_LIMIT_REQUESTS = _sayi("CHAT_RATE_LIMIT_REQUESTS", 10)

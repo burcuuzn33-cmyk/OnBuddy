@@ -1,9 +1,9 @@
-"""Sohbet akışı: günlük bütçe → bilgi araması → Groq → kullanım kaydı → yönlendirme.
+"""Sohbet akışı: günlük bütçe → Groq → kullanım kaydı → yönlendirme.
 
-Rotalar sadece bu fonksiyonu çağırır; arama, yapay zekâ ve veritabanı adımlarını burası birleştirir.
+Rotalar sadece bu fonksiyonu çağırır; yapay zekâ ve veritabanı adımlarını burası birleştirir.
 """
 import logging
-from collections import Counter
+import re
 
 from flask import current_app
 
@@ -18,13 +18,10 @@ BUTCE_DOLDU_YANITI = (
     "formunu kullanabilir ya da info@onbuddy.com adresine yazabilirsiniz."
 )
 
-# Bulunan parçaların kategorisine göre Wix'in göstereceği form butonu
-YONLENDIRME = {
-    "urun": "demo_formu",
-    "sirket": "demo_formu",
-    "kariyer": "basvuru_formu",
-    "pozisyon": "basvuru_formu",
-}
+# Model, form önerirken cevabın sonuna [FORM:demo] veya [FORM:basvuru] ekler (bkz. knowledge/cekirdek.md).
+# Etiket kullanıcıya gösterilmez; Wix'in göstereceği form butonuna çevrilir.
+FORM_ETIKETI = re.compile(r"\[\s*FORM\s*:\s*(demo|basvuru)\s*\]", re.IGNORECASE)
+YONLENDIRME = {"demo": "demo_formu", "basvuru": "basvuru_formu"}
 
 
 def sohbet_et(mesaj, gecmis):
@@ -35,39 +32,28 @@ def sohbet_et(mesaj, gecmis):
         log.warning("Günlük token bütçesi doldu, Groq'a gidilmedi.")
         return {"cevap": BUTCE_DOLDU_YANITI, "yonlendirme": None}
 
-    parcalar = bilgi_servisi.ara(mesaj, _onceki_kullanici_mesaji(gecmis), ayarlar["RAG_TOP_K"])
-
     try:
-        sonuc = ai_service.yanit_uret(mesaj, gecmis, bilgi_servisi.cekirdek(ayarlar), parcalar)
+        sonuc = ai_service.yanit_uret(
+            mesaj, gecmis, bilgi_servisi.cekirdek(ayarlar), bilgi_servisi.bilgi(ayarlar)
+        )
     except AIServiceError as e:
         _kullanim_kaydet(e.model, 0, 0, None, "kota" if e.durum_kodu == 429 else "hata")
         raise
 
     if not sonuc.demo:
         _kullanim_kaydet(sonuc.model, sonuc.prompt_token, sonuc.cevap_token, sonuc.sure_ms, "basarili")
-    return {"cevap": sonuc.cevap, "yonlendirme": yonlendirme_bul(parcalar)}
+    cevap, yonlendirme = yonlendirmeyi_ayir(sonuc.cevap)
+    return {"cevap": cevap, "yonlendirme": yonlendirme}
 
 
-def yonlendirme_bul(parcalar):
-    """Parçaların çoğunluğu hangi alandansa o formu önerir; ek bir yapay zekâ çağrısı gerekmez.
+def yonlendirmeyi_ayir(cevap):
+    """Cevaptaki [FORM:...] etiketini ayırır. Dönen: (etiketsiz cevap, "demo_formu" | "basvuru_formu" | None).
 
-    Eşitlikte en alakalı (ilk) parçanın alanı kazanır. Parça yoksa None.
+    Birden fazla etiket varsa sonuncusu geçerlidir. Etiketsiz cevapta yönlendirme yoktur.
     """
-    hedefler = [YONLENDIRME[p["kategori"]] for p in parcalar if p["kategori"] in YONLENDIRME]
-    if not hedefler:
-        return None
-    sayilar = Counter(hedefler)
-    en_cok = max(sayilar.values())
-    return next(h for h in hedefler if sayilar[h] == en_cok)
-
-
-def _onceki_kullanici_mesaji(gecmis):
-    if not isinstance(gecmis, list):
-        return None
-    for m in reversed(gecmis):
-        if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str):
-            return m["content"]
-    return None
+    etiketler = FORM_ETIKETI.findall(cevap)
+    temiz = FORM_ETIKETI.sub("", cevap).strip()
+    return temiz, (YONLENDIRME[etiketler[-1].lower()] if etiketler else None)
 
 
 def _kullanim_kaydet(model, prompt_token, cevap_token, sure_ms, durum):

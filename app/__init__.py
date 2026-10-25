@@ -8,7 +8,7 @@ from app.database import init_db
 
 
 def create_app(config_adi=None, ayarlar=None):
-    """Uygulama fabrikası: ayarlar → CORS → veritabanı → bilgi indeksi → rotalar sırasıyla birleştirilir.
+    """Uygulama fabrikası: ayarlar → CORS → veritabanı → bilgi dosyaları → rotalar sırasıyla birleştirilir.
 
     ayarlar: testlerde config değerlerini ezmek için (ör. geçici veritabanı yolu)
     """
@@ -36,11 +36,10 @@ def create_app(config_adi=None, ayarlar=None):
     # 3) Veritabanı tablolarını hazırla (yoksa oluşturur)
     init_db(app)
 
-    # 4) Bilgi dokümanlarını ve pozisyonları arama tablosuna indeksle (değişmeyenler atlanır)
+    # 4) Bilgi dosyaları (cekirdek.md, bilgi.md) yoksa veya boşsa açılış başarısız olur
     from app.services.knowledge_service import bilgi_servisi
     from app.services.hiz_siniri import HizSiniri
-    with app.app_context():
-        bilgi_servisi.indeksle(app.config)
+    bilgi_servisi.dogrula(app.config)
     app.extensions["sohbet_hiz_siniri"] = HizSiniri(
         app.config["CHAT_RATE_LIMIT_REQUESTS"], app.config["CHAT_RATE_LIMIT_WINDOW_SECONDS"]
     )
